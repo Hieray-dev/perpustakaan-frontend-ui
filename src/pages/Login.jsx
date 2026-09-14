@@ -1,282 +1,200 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { BookOpen, User, Lock, ArrowRight, Loader2, Sparkles } from 'lucide-react';
 
-function Login() {
+const SPINE_PALETTE = [
+  '#fb923c',
+  '#f59e0b',
+  '#fb7185',
+  '#0d9488',
+  '#f97316',
+  '#a8a29e',
+  '#facc15',
+  '#0284c7',
+  '#059669',
+  '#6366f1',
+  '#d97706',
+  '#64748b',
+  '#f87171',
+  '#0e7490',
+  '#0f766e',
+  '#10b981',
+  '#eab308',
+  '#fda4af',
+  '#78716c',
+  '#4f46e5',
+];
+
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (h * 31 + s.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h);
+}
+
+export default function Login() {
   const navigate = useNavigate();
-  const [isSignUp, setIsSignUp] = useState(false);
+  const location = useLocation();
 
-  const [loginIdentifier, setLoginIdentifier] = useState('');
-  const [loginPass, setLoginPass] = useState('');
-  const [regUser, setRegUser] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regPass, setRegPass] = useState('');
+  // Judul & warna buku yang diklik dari halaman landing (opsional)
+  const bookTitle =
+    (location.state && location.state.bookTitle) ||
+    (typeof location.state === 'string' && location.state) ||
+    'Laskar Pelangi';
+  const bookColor =
+    (location.state && location.state.bookColor) || SPINE_PALETTE[hashStr(bookTitle) % SPINE_PALETTE.length];
 
-  const [showLoginPass, setShowLoginPass] = useState(false);
-  const [showRegPass, setShowRegPass] = useState(false);
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const [message, setMessage] = useState('');
-
-  const toggleForm = (toSignUp) => {
-    setIsSignUp(toSignUp);
-    setMessage('');
-  };
+  const accent = bookColor;
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError('');
+    setLoading(true);
+
     try {
-      const response = await axios.post('http://localhost:8080/login', {
-        username: loginIdentifier,
-        password: loginPass,
+      const res = await axios.post('http://localhost:8080/login', {
+        username,
+        password,
       });
 
-      localStorage.setItem('token', response.data.token);
-
-      localStorage.setItem('username', loginIdentifier);
-
-      const userRole = response.data.id_role || response.data.role || (loginIdentifier.toLowerCase() === 'ray' ? 1 : 2);
-      localStorage.setItem('userRole', userRole);
+      localStorage.setItem('token', res.data.token);
+      localStorage.setItem('user', JSON.stringify(res.data.user || res.data));
 
       navigate('/dashboard');
-    } catch (error) {
-      setMessage('Login Gagal: ' + (error.response?.data?.message || 'Gagal terhubung ke backend'));
-    }
-  };
-
-  const handleRegister = async (e) => {
-    e.preventDefault();
-    try {
-      await axios.post('http://localhost:8080/register', {
-        username: regUser,
-        email: regEmail,
-        password: regPass,
-      });
-      setMessage('Registrasi Berhasil! Silakan Login.');
-      setIsSignUp(false);
-    } catch (error) {
-      setMessage('Register Gagal: ' + (error.response?.data?.message || 'Gagal terhubung ke backend'));
+    } catch (err) {
+      setError(err.response?.data?.message || 'Login gagal. Cek username dan password.');
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen w-full flex items-center justify-center p-4 sm:p-6 bg-slate-100 text-slate-800 relative overflow-x-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-[#FBF6EF] via-[#FAF7F2] to-[#F3EBDD] text-slate-900">
+      <div className="mx-auto grid min-h-screen w-full max-w-6xl items-center gap-10 px-4 py-10 lg:grid-cols-2">
+        {/* ── Kiri: Hero buku yang sedang dilihat ─────────────────── */}
+        <div className="relative flex flex-col items-center text-center lg:items-start lg:text-left">
+          <span className="mb-6 inline-flex items-center gap-2 rounded-full border border-slate-900/10 bg-white/70 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
+            <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+            Perpustakaan
+          </span>
 
-      {/* --- BACKGROUND WAVE RESPONSIVE --- */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <svg 
-          className="absolute right-0 top-0 h-full w-[80%] md:w-[55%] opacity-90 transition-all duration-500" 
-          viewBox="0 0 500 800" 
-          preserveAspectRatio="none"
-        >
-          <path d="M180,0 C320,250 100,550 220,800 L500,800 L500,0 Z" fill="#b91c1c" />
-        </svg>
+          <h1 className="text-4xl font-bold leading-tight tracking-tight sm:text-5xl">
+            Buku impianmu,
+            <br />
+            tinggal satu klik lagi.
+          </h1>
+          <p className="mt-4 max-w-md text-sm leading-relaxed text-slate-500">
+            Masuk untuk meminjam <span className="font-semibold text-slate-800">{bookTitle}</span>{' '}
+            dan jelajahi koleksi lainnya.
+          </p>
 
-        <svg 
-          className="absolute left-0 bottom-0 h-full w-[60%] md:w-[40%] opacity-20 transition-all duration-500" 
-          viewBox="0 0 500 800" 
-          preserveAspectRatio="none"
-        >
-          <path d="M0,0 L0,800 L300,800 C150,550 350,250 0,0 Z" fill="#dc2626" />
-        </svg>
+          {/* Buku hero */}
+          <div className="relative mt-12">
+            {/* bayangan lembut */}
+            <div className="absolute left-1/2 top-1/2 h-40 w-40 -translate-x-1/2 -translate-y-1/3 rounded-full opacity-40 blur-2xl" style={{ background: accent }} />
 
-        <div className="absolute top-[8%] left-[5%] md:left-[10%] w-20 h-20 md:w-28 md:h-28 rounded-full bg-red-400/10 blur-sm" />
-        <div className="absolute bottom-[10%] left-[8%] md:left-[18%] w-28 h-28 md:w-36 md:h-36 rounded-full bg-red-500/15 blur-md" />
-      </div>
+            <div
+              className="relative -rotate-6 rounded-r-md rounded-l-md shadow-2xl transition hover:rotate-3"
+              style={{
+                width: 180,
+                height: 260,
+                background: `linear-gradient(${accent}, ${accent}55 45%, ${accent})`,
+                boxShadow: `inset -8px 0 0 rgba(0,0,0,0.16), inset 6px 0 0 rgba(255,255,255,0.12), 14px 18px 34px rgba(80,60,40,0.28)`,
+              }}
+            >
+              <div className="flex h-full items-center justify-center rounded-r-md px-4">
+                <span className="select-none text-center text-sm font-semibold leading-snug text-white/90 [writing-mode:vertical-rl]">
+                  {bookTitle}
+                </span>
+              </div>
+            </div>
+          </div>
 
-      {/* --- KARTU UTAMA --- */}
-      <div className="relative w-full max-w-4xl h-auto md:h-[550px] min-h-[500px] rounded-3xl overflow-hidden shadow-2xl bg-white border border-slate-200 z-10 flex flex-col md:block">
+          <p className="mt-8 text-xs text-slate-400">
+            Belum punya akun?{' '}
+            <Link to="/register" className="font-semibold text-slate-800 underline">
+              Daftar di sini
+            </Link>
+          </p>
+        </div>
 
-        {/* --- FORM SIGN IN --- */}
-        <div className={`w-full md:w-1/2 h-full p-6 sm:p-8 md:p-12 flex flex-col justify-center transition-all duration-700 ease-in-out md:absolute md:top-0 md:left-0 ${
-          isSignUp ? 'hidden md:flex md:opacity-0 md:-translate-x-12 md:pointer-events-none' : 'flex opacity-100 translate-x-0 z-10'
-        }`}>
-          <form onSubmit={handleLogin} className="flex flex-col gap-3 sm:gap-4 max-w-sm mx-auto w-full">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-center text-slate-900">Sign In</h1>
-            <p className="text-xs text-center text-slate-500 -mt-1 mb-2">
-              Masuk dengan akun kamu
-            </p>
+        {/* ── Kanan: Form login ───────────────────────────────────── */}
+        <div className="mx-auto w-full max-w-md">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
+            <div className="mb-6 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-900 text-white">
+                <BookOpen className="h-5 w-5" />
+              </div>
+              <h2 className="mt-3 text-lg font-semibold text-slate-900">Masuk untuk meminjam</h2>
+              <p className="mt-1 text-sm text-slate-500">Login dengan akun perpustakaan Anda</p>
+            </div>
 
-            {message && (
-              <div className="p-2.5 text-xs text-center rounded-lg bg-red-500/10 border border-red-500/30 text-red-500">
-                {message}
+            {error && (
+              <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-600">
+                {error}
               </div>
             )}
 
-            <input
-              type="text"
-              placeholder="Email or Username"
-              value={loginIdentifier}
-              onChange={(e) => setLoginIdentifier(e.target.value)}
-              className="w-full px-4 py-3 rounded-xl text-sm border bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
-              required
-            />
+            <form onSubmit={handleLogin} className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Username</label>
+                <div className="relative">
+                  <User className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    required
+                    autoComplete="username"
+                    className="w-full rounded-full border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-300/50"
+                    placeholder="Username"
+                  />
+                </div>
+              </div>
 
-            <div className="relative">
-              <input
-                type={showLoginPass ? 'text' : 'password'}
-                placeholder="Password"
-                value={loginPass}
-                onChange={(e) => setLoginPass(e.target.value)}
-                className="w-full px-4 py-3 pr-11 rounded-xl text-sm border bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
-                required
-              />
+              <div>
+                <label className="mb-1.5 block text-sm font-medium text-slate-700">Password</label>
+                <div className="relative">
+                  <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                    autoComplete="current-password"
+                    className="w-full rounded-full border border-slate-200 bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-900 outline-none transition focus:border-amber-400 focus:bg-white focus:ring-2 focus:ring-amber-300/50"
+                    placeholder="Password"
+                  />
+                </div>
+              </div>
+
               <button
-                type="button"
-                onClick={() => setShowLoginPass(!showLoginPass)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 transition-colors"
+                type="submit"
+                disabled={loading}
+                className="flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {showLoginPass ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-                  </svg>
-                )}
+                {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                {loading ? 'Memproses...' : 'Masuk'}
+                {!loading && <ArrowRight className="h-4 w-4" />}
               </button>
-            </div>
+            </form>
 
-            <button
-              type="submit"
-              className="mt-2 bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-700 hover:to-rose-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-red-500/25 transition transform active:scale-95 text-sm uppercase tracking-wider cursor-pointer"
-            >
-              Sign In
-            </button>
-
-            <div className="mt-4 pt-3 border-t border-slate-100 text-center md:hidden">
-              <p className="text-xs text-slate-500">
-                Belum punya akun?{' '}
-                <button 
-                  type="button" 
-                  onClick={() => toggleForm(true)} 
-                  className="text-red-600 font-bold hover:underline cursor-pointer ml-1 inline-block"
-                >
-                  Daftar di sini
-                </button>
-              </p>
-            </div>
-          </form>
-        </div>
-
-        {/* --- FORM SIGN UP --- */}
-        <div className={`w-full md:w-1/2 h-full p-6 sm:p-8 md:p-12 flex flex-col justify-center transition-all duration-700 ease-in-out md:absolute md:top-0 md:right-0 ${
-          isSignUp ? 'flex opacity-100 translate-x-0 z-10' : 'hidden md:flex md:opacity-0 md:translate-x-12 md:pointer-events-none'
-        }`}>
-          <form onSubmit={handleRegister} className="flex flex-col gap-3 max-w-sm mx-auto w-full">
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-center text-slate-900">Create Account</h1>
-            <p className="text-xs text-center text-slate-500 -mt-1 mb-2">
-              Daftar untuk membuat akun perpustakaan
+            <p className="mt-6 text-center text-sm text-slate-500">
+              Kembali ke rak buku?{' '}
+              <Link to="/" className="font-semibold text-amber-600 hover:underline">
+                Lihat buku
+              </Link>
             </p>
-
-            <input
-              type="text"
-              placeholder="Username"
-              value={regUser}
-              onChange={(e) => setRegUser(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl text-sm border bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
-              required
-            />
-
-            <input
-              type="email"
-              placeholder="Email"
-              value={regEmail}
-              onChange={(e) => setRegEmail(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl text-sm border bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
-              required
-            />
-
-            <div className="relative">
-              <input
-                type={showRegPass ? 'text' : 'password'}
-                placeholder="Password"
-                value={regPass}
-                onChange={(e) => setRegPass(e.target.value)}
-                className="w-full px-4 py-2.5 pr-11 rounded-xl text-sm border bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowRegPass(!showRegPass)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-slate-400 hover:text-slate-700 transition-colors"
-              >
-                {showRegPass ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                  </svg>
-                ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor" className="w-5 h-5">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
-                  </svg>
-                )}
-              </button>
-            </div>
-
-            <button
-              type="submit"
-              className="mt-2 bg-gradient-to-r from-red-600 to-rose-500 hover:from-red-700 hover:to-rose-600 text-white font-bold py-3 rounded-xl shadow-lg shadow-red-500/25 transition transform active:scale-95 text-sm uppercase tracking-wider cursor-pointer"
-            >
-              Sign Up
-            </button>
-
-            <div className="mt-3 pt-3 border-t border-slate-100 text-center md:hidden">
-              <p className="text-xs text-slate-500">
-                Sudah punya akun?{' '}
-                <button 
-                  type="button" 
-                  onClick={() => toggleForm(false)} 
-                  className="text-red-600 font-bold hover:underline cursor-pointer ml-1 inline-block"
-                >
-                  Masuk di sini
-                </button>
-              </p>
-            </div>
-          </form>
-        </div>
-
-        {/* --- OVERLAY SLIDING PANEL MERAH --- */}
-        <div className={`hidden md:block absolute top-0 left-0 w-1/2 h-full overflow-hidden transition-transform duration-700 ease-in-out z-30 ${
-          isSignUp ? 'translate-x-0' : 'translate-x-full'
-        }`}>
-          <div className={`bg-gradient-to-br from-red-600 via-rose-600 to-red-700 text-white h-full w-[200%] relative -left-full transition-transform duration-700 ease-in-out flex ${
-            isSignUp ? 'translate-x-1/2' : 'translate-x-0'
-          }`}>
-            <div className="w-1/2 h-full flex flex-col items-center justify-center p-12 text-center">
-              <h2 className="text-3xl font-bold mb-3">Selamat Datang!</h2>
-              <p className="text-sm text-red-100 mb-8 max-w-xs">
-                Sudah punya akun? Masuk untuk melanjutkan akses perpustakaan.
-              </p>
-              <button
-                type="button"
-                onClick={() => toggleForm(false)}
-                className="border-2 border-white text-white font-bold px-8 py-2.5 rounded-xl hover:bg-white hover:text-red-600 transition duration-300 text-xs uppercase tracking-widest shadow-md cursor-pointer"
-              >
-                Sign In
-              </button>
-            </div>
-
-            <div className="w-1/2 h-full flex flex-col items-center justify-center p-12 text-center">
-              <h2 className="text-3xl font-bold mb-3">Hello World!</h2>
-              <p className="text-sm text-red-100 mb-8 max-w-xs">
-                Belum punya akun? Buat akun sekarang dan nikmati layanan perpustakaan digital kami.
-              </p>
-              <button
-                type="button"
-                onClick={() => toggleForm(true)}
-                className="border-2 border-white text-white font-bold px-8 py-2.5 rounded-xl hover:bg-white hover:text-red-600 transition duration-300 text-xs uppercase tracking-widest shadow-md cursor-pointer"
-              >
-                Sign Up
-              </button>
-            </div>
           </div>
         </div>
-
       </div>
     </div>
   );
 }
-
-export default Login;
