@@ -21,6 +21,15 @@
   }
 }
 
+/* Transisi halus antar halaman (Login/Register) */
+.animate-fade-in {
+  animation: fade-in 0.4s ease-in-out both;
+}
+
+.animate-zoom-in {
+  animation: zoom-in 0.35s ease-in-out both;
+}
+
 /* Custom Styling untuk Animation Overlay */
 .container-sliding {
   position: relative;
