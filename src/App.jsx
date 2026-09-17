@@ -1,5 +1,4 @@
 import { Routes, Route, Navigate, Outlet } from 'react-router-dom';
-import Landing from './pages/Landing';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
@@ -29,8 +28,8 @@ function RequireAdmin() {
 function App() {
   return (
     <Routes>
-      {/* Halaman publik */}
-      <Route path="/" element={<Landing />} />
+      {/* Root langsung menampilkan halaman Login (Warm Split-Screen) */}
+      <Route path="/" element={<Login />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
 
