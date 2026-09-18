@@ -1,133 +1,262 @@
-import { useState } from 'react';
-import axios from 'axios';
-import { useNavigate, Link } from 'react-router-dom';
-import { User, Lock, Eye, EyeOff, Loader2, BookOpen, ArrowRight } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  ArrowRight,
+  BookOpen,
+  CircleAlert,
+  Eye,
+  EyeOff,
+  Loader2,
+  LockKeyhole,
+  Mail,
+} from 'lucide-react';
 
-export default function Login() {
+function LibraryBrand() {
+  return (
+    <Link
+      to="/"
+      aria-label="Perpustakaan Digital — beranda"
+      className="inline-flex w-fit items-center gap-3.5 rounded-sm text-stone-900 outline-none focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-4 focus-visible:ring-offset-[#FAF7F2]"
+    >
+      <span className="flex size-11 items-center justify-center rounded-sm border border-stone-300">
+        <BookOpen aria-hidden="true" className="size-6" strokeWidth={1.4} />
+      </span>
+      <span className="font-serif text-[15px] leading-snug tracking-[0.12em]">
+        PERPUSTAKAAN
+        <span className="block">DIGITAL</span>
+      </span>
+    </Link>
+  );
+}
+
+function LoginEditorial() {
+  return (
+    <section
+      aria-labelledby="library-heading"
+      className="flex flex-col border-b border-stone-200 bg-[#FAF7F2] px-6 pb-10 pt-7 sm:px-10 lg:w-[54%] lg:border-b-0 lg:border-r lg:px-14 lg:py-12 xl:px-20"
+    >
+      {/* Atas: Brand logo */}
+      <header>
+        <LibraryBrand />
+      </header>
+
+      {/* Tengah: Headline editorial */}
+      <div className="flex flex-1 flex-col justify-center py-10 sm:py-14 lg:py-10">
+        <p className="mb-6 flex items-center gap-3 text-[10px] font-medium uppercase tracking-[0.22em] text-stone-600 sm:text-xs">
+          <span aria-hidden="true" className="h-px w-8 bg-stone-400" />
+          Buka buku. Buka wawasan.
+        </p>
+        <h1
+          id="library-heading"
+          className="font-serif text-5xl font-normal leading-[1.04] tracking-[-0.045em] text-stone-900 sm:text-6xl lg:text-7xl xl:text-[88px] 2xl:text-[96px]"
+        >
+          Ruang Baca
+          <br />
+          <span className="italic">&amp; Literasi</span>
+          <br />
+          Digital
+        </h1>
+        <p className="mt-7 max-w-80 text-sm leading-7 text-stone-600 sm:max-w-sm sm:text-[15px] lg:mt-8">
+          Temukan cerita, perluas pengetahuan, dan tumbuh bersama setiap halaman. Ruang baca Anda, kapan saja dan di mana saja.
+        </p>
+      </div>
+
+      {/* Bawah: Footer minimalis */}
+      <footer className="hidden items-center justify-between gap-4 border-t border-stone-300 pt-5 text-[11px] leading-5 text-stone-500 lg:flex">
+        <p>© {new Date().getFullYear()} Perpustakaan Digital</p>
+        <p className="font-serif text-sm italic">Untuk rasa ingin tahu.</p>
+      </footer>
+    </section>
+  );
+}
+
+function LoginForm() {
   const navigate = useNavigate();
-
-  const [username, setUsername] = useState('');
+  const submitting = useRef(false);
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
+  async function handleLogin(event) {
+    event.preventDefault();
+    if (submitting.current) return;
+
+    submitting.current = true;
     setLoading(true);
+    setError('');
 
     try {
-      const res = await axios.post('http://localhost:8080/login', {
-        username,
-        password,
+      const response = await fetch('http://localhost:8080/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ email: email.trim(), password }),
+        signal: AbortSignal.timeout(15000),
       });
+      const data = await response.json().catch(() => null);
 
-      localStorage.setItem('token', res.data.token);
-      localStorage.setItem('user', JSON.stringify(res.data.user || res.data));
+      if (!response.ok) {
+        const fallback = response.status === 401 || response.status === 403
+          ? 'Email atau password tidak sesuai. Silakan coba lagi.'
+          : 'Login gagal. Silakan coba lagi beberapa saat.';
+        throw new Error(
+          typeof data?.message === 'string' && data.message.trim()
+            ? data.message
+            : fallback,
+        );
+      }
 
-      navigate('/dashboard');
+      if (typeof data?.token !== 'string' || !data.token.trim()) {
+        throw new Error('Respons server tidak valid. Token login tidak ditemukan.');
+      }
+
+      try {
+        localStorage.setItem('user', JSON.stringify(data.user || {
+          username: data.username || email.trim(),
+          id_role: data.id_role ?? null,
+        }));
+        localStorage.setItem('token', data.token);
+      } catch {
+        throw new Error('Sesi tidak dapat disimpan. Izinkan penyimpanan situs di browser, lalu coba lagi.');
+      }
+
+      navigate('/dashboard', { replace: true });
     } catch (err) {
-      setError(err.response?.data?.message || 'Login gagal. Cek username dan password.');
+      if (err.name === 'TimeoutError' || err.name === 'AbortError') {
+        setError('Server terlalu lama merespons. Silakan coba lagi.');
+      } else if (err instanceof TypeError) {
+        setError('Tidak dapat terhubung ke server. Periksa koneksi Anda dan coba lagi.');
+      } else {
+        setError(err.message || 'Login gagal. Silakan coba lagi.');
+      }
     } finally {
+      submitting.current = false;
       setLoading(false);
     }
-  };
+  }
 
   return (
-    <div className="grid min-h-screen grid-cols-1 bg-[#FAF7F2] lg:grid-cols-2">
-      {/* ── Kiri: Editorial column ─────────────────────────────── */}
-      <div className="flex min-h-screen flex-col justify-between border-r border-stone-200/80 bg-[#FAF7F2]">
-        {/* Atas: Brand logo */}
-        <Link to="/" className="flex items-center gap-2 p-8 font-serif text-lg font-bold text-stone-900">
-          <BookOpen className="h-5 w-5" />
-          Perpustakaan Digital
-        </Link>
-
-        {/* Tengah: Headline editorial */}
-        <div className="flex-1 flex flex-col items-start justify-center px-8 py-10">
-          <span className="mb-5 font-sans text-xs font-semibold uppercase tracking-[0.2em] text-amber-800/60">
-            PERPUSTAKAAN DIGITAL
-          </span>
-          <h1 className="mb-4 max-w-lg font-serif text-4xl font-medium leading-[1.15] tracking-tight text-stone-900 lg:text-5xl">
-            Ruang baca hangat untuk setiap petualangan barumu.
-          </h1>
-          <p className="max-w-md font-sans text-sm text-stone-500">
-            Jelajahi ribuan koleksi buku digital kapan saja, di mana saja.
-          </p>
-        </div>
-
-        {/* Bawah: Footer minimalis */}
-        <p className="p-8 font-sans text-xs text-stone-400">© 2026 Perpustakaan Digital</p>
+    <div className="w-full max-w-sm">
+      <div className="mb-9">
+        <p className="mb-4 text-[10px] font-medium uppercase tracking-[0.2em] text-stone-500">
+          Mulai perjalanan membaca Anda
+        </p>
+        <h2 id="login-heading" className="font-serif text-[40px] font-normal leading-[1.15] tracking-[-0.035em] sm:text-[44px]">
+          Selamat datang<br />kembali.
+        </h2>
+        <p className="mt-4 text-sm leading-6 text-stone-500">
+          Masuk untuk melanjutkan cerita Anda.
+        </p>
       </div>
 
-      {/* ── Kanan: Card amber terintegrasi grid ────────────────── */}
-      <div className="flex min-h-screen items-center justify-center bg-[#FAF7F2] p-6 lg:p-10">
-        <div className="w-full max-w-md rounded-3xl border border-amber-500/20 bg-amber-400 p-8 shadow-lg">
-          <h1 className="mb-6 text-center text-xl font-semibold text-slate-900">Login to continue</h1>
+      {error && (
+        <div id="login-error" role="alert" className="mb-6 flex items-start gap-3 rounded-md border border-red-200 bg-red-50 p-4 text-sm leading-6 text-red-800">
+          <CircleAlert aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          <p>{error}</p>
+        </div>
+      )}
 
-          {error && (
-            <div className="mb-5 w-full rounded-xl bg-white/90 px-4 py-2.5 text-sm text-red-600">
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleLogin} className="flex w-full flex-col gap-4">
-            <div className="flex w-full items-center rounded-full bg-white px-4 py-3 shadow-sm">
-              <User className="h-4 w-4 shrink-0 text-slate-400" />
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                required
-                autoComplete="username"
-                aria-label="Username"
-                className="w-full min-w-0 bg-transparent px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                placeholder="Username"
-              />
-            </div>
-
-            <div className="flex w-full items-center rounded-full bg-white px-4 py-3 shadow-sm">
-              <Lock className="h-4 w-4 shrink-0 text-slate-400" />
-              <input
-                type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                autoComplete="current-password"
-                aria-label="Password"
-                className="w-full min-w-0 bg-transparent px-3 text-sm text-slate-900 outline-none placeholder:text-slate-400"
-                placeholder="Password"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
-                className="ml-auto shrink-0 text-slate-400 transition hover:text-slate-600"
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-
-            <button
-              type="submit"
+      <form
+        onSubmit={handleLogin}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' && (event.nativeEvent.isComposing || event.keyCode === 229)) event.preventDefault();
+        }}
+        aria-labelledby="login-heading"
+        aria-describedby={error ? 'login-error' : undefined}
+        aria-busy={loading}
+        className="flex flex-col gap-5"
+      >
+        <div>
+          <label htmlFor="email" className="mb-2.5 block text-xs font-medium text-stone-700">Email</label>
+          <div className="relative">
+            <Mail aria-hidden="true" strokeWidth={1.5} className="pointer-events-none absolute left-4 top-1/2 size-[18px] -translate-y-1/2 text-stone-400" />
+            <input
+              id="email"
+              name="email"
+              type="email"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              required
               disabled={loading}
-              className="flex w-full items-center justify-center gap-2 rounded-full bg-slate-900 py-3 text-sm font-medium text-white transition-all hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {loading ? 'Memproses...' : 'Masuk'}
-              {!loading && <ArrowRight className="h-4 w-4" />}
-            </button>
-          </form>
-
-          <p className="mt-6 text-center text-sm text-slate-800/80">
-            Belum punya akun?{' '}
-            <Link to="/register" className="font-semibold text-slate-900 underline underline-offset-2 hover:text-slate-700">
-              Daftar
-            </Link>
-          </p>
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              placeholder="nama@email.com"
+              className="h-14 w-full rounded-md border border-stone-200 bg-white pl-11 pr-4 text-base text-stone-900 outline-none transition-colors placeholder:text-stone-500 focus:border-stone-400 focus:ring-2 focus:ring-stone-400 disabled:opacity-60 sm:text-sm"
+            />
+          </div>
         </div>
-      </div>
+
+        <div>
+          <label htmlFor="password" className="mb-2.5 block text-xs font-medium text-stone-700">Password</label>
+          <div className="relative">
+            <LockKeyhole aria-hidden="true" strokeWidth={1.5} className="pointer-events-none absolute left-4 top-1/2 size-[18px] -translate-y-1/2 text-stone-400" />
+            <input
+              id="password"
+              name="password"
+              type={showPassword ? 'text' : 'password'}
+              autoComplete="current-password"
+              required
+              disabled={loading}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="Masukkan password"
+              className="h-14 w-full rounded-md border border-stone-200 bg-white pl-11 pr-14 text-base text-stone-900 outline-none transition-colors placeholder:text-stone-500 focus:border-stone-400 focus:ring-2 focus:ring-stone-400 disabled:opacity-60 sm:text-sm"
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? 'Sembunyikan password' : 'Tampilkan password'}
+              aria-controls="password"
+              aria-pressed={showPassword}
+              disabled={loading}
+              onClick={() => setShowPassword((visible) => !visible)}
+              className="absolute right-1.5 top-1/2 flex size-11 -translate-y-1/2 cursor-pointer items-center justify-center rounded-sm text-stone-500 outline-none transition-colors hover:text-stone-900 focus-visible:ring-2 focus-visible:ring-stone-400 disabled:cursor-not-allowed"
+            >
+              {showPassword
+                ? <EyeOff aria-hidden="true" className="size-[18px]" strokeWidth={1.5} />
+                : <Eye aria-hidden="true" className="size-[18px]" strokeWidth={1.5} />}
+            </button>
+          </div>
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading}
+          className="mt-2 flex h-14 w-full cursor-pointer items-center justify-center gap-3 rounded-md bg-stone-900 px-5 text-sm font-medium text-[#FAF7F2] outline-none transition-colors hover:bg-stone-800 focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-4 disabled:cursor-not-allowed disabled:opacity-70"
+        >
+          {loading && <Loader2 aria-hidden="true" className="size-4 animate-spin motion-reduce:animate-none" />}
+          <span aria-live="polite">{loading ? 'Sedang masuk...' : 'Masuk'}</span>
+          {!loading && <ArrowRight aria-hidden="true" className="size-4" strokeWidth={1.5} />}
+        </button>
+      </form>
+
+      <p className="mt-8 border-t border-stone-200 pt-7 text-center text-sm leading-6 text-stone-500">
+        Belum punya akun?{' '}
+        <Link to="/register" className="rounded-sm font-medium text-stone-900 underline decoration-stone-400 underline-offset-4 outline-none transition-colors hover:text-stone-600 focus-visible:ring-2 focus-visible:ring-stone-400 focus-visible:ring-offset-4">
+          Daftar
+        </Link>
+      </p>
     </div>
+  );
+}
+
+export default function Login() {
+  return (
+    <main className="flex min-h-svh flex-col bg-[#FAF7F2] font-sans text-stone-900 selection:bg-stone-200 selection:text-stone-900 lg:flex-row">
+      <LoginEditorial />
+      <section aria-labelledby="login-heading" className="flex flex-1 flex-col bg-white px-6 py-10 sm:px-10 lg:px-14 lg:py-12 xl:px-20">
+        <div aria-hidden="true" className="hidden items-center justify-between text-[10px] font-medium uppercase tracking-[0.18em] text-stone-500 lg:flex">
+          <span>Akses anggota</span>
+          <span className="font-serif text-sm tracking-normal">01 / Masuk</span>
+        </div>
+        <div className="flex flex-1 items-center justify-center lg:py-4">
+          <LoginForm />
+        </div>
+        <p className="mt-10 text-center text-[11px] leading-5 text-stone-500 lg:mt-0">
+          Satu akun. Banyak cerita untuk ditemukan.
+        </p>
+      </section>
+    </main>
   );
 }
