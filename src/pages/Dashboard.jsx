@@ -8,7 +8,6 @@ import {
   Building2,
   CalendarDays,
   Check,
-  ChevronDown,
   CircleAlert,
   Clock3,
   FileBarChart,
@@ -41,10 +40,10 @@ const MOCK_LOANS = [
 ];
 
 const MOCK_FACILITIES = [
-  { id: 1, name: 'Ruang Baca Utama', condition: 'Baik', quantity: 1 },
-  { id: 2, name: 'Meja Baca Individual', condition: 'Baik', quantity: 24 },
-  { id: 3, name: 'Komputer Katalog', condition: 'Perlu Perawatan', quantity: 6 },
-  { id: 4, name: 'Loker Penitipan', condition: 'Baik', quantity: 32 },
+  { id: 1, name: 'Ruang Baca Utama', good: 1, maintenance: 0, broken: 0 },
+  { id: 2, name: 'Meja Baca Individual', good: 24, maintenance: 0, broken: 0 },
+  { id: 3, name: 'Komputer Katalog', good: 4, maintenance: 1, broken: 1 },
+  { id: 4, name: 'Loker Penitipan', good: 30, maintenance: 2, broken: 0 },
 ];
 
 const MOCK_STAFF = [
@@ -152,6 +151,7 @@ function StatCard({ label, value, detail, icon: Icon, accent = 'stone' }) {
 function AttendanceWidget() {
   const [clock, setClock] = useState(new Date());
   const [attendanceState, setAttendanceState] = useState('idle');
+  const [entryTime, setEntryTime] = useState('');
   const [message, setMessage] = useState('');
 
   useEffect(() => {
@@ -160,18 +160,30 @@ function AttendanceWidget() {
   }, []);
 
   const submitAttendance = async (type) => {
+    const recordedAt = new Date();
     setMessage('');
     try {
-      await api.post('/api/absensi', { tipe: type, waktu: new Date().toISOString() });
-      setMessage(type === 'masuk' ? 'Absensi masuk berhasil dicatat.' : 'Absensi keluar berhasil dicatat.');
+      await api.post('/api/absensi', { tipe: type, waktu: recordedAt.toISOString() });
+      setMessage(type === 'masuk' ? 'Jam masuk berhasil dicatat.' : 'Jam keluar berhasil dicatat.');
     } catch {
       setMessage('Absensi dicatat di tampilan demo.');
     }
-    setAttendanceState(type === 'masuk' ? 'entered' : 'exited');
+
+    if (type === 'masuk') {
+      const isLate = recordedAt.getHours() > 8 || (recordedAt.getHours() === 8 && recordedAt.getMinutes() > 0);
+      setEntryTime(recordedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }));
+      setAttendanceState(isLate ? 'late' : 'present');
+    } else {
+      setAttendanceState('exited');
+    }
   };
 
-  const isEntered = attendanceState === 'entered' || attendanceState === 'exited';
-  return <section className="mb-8 rounded-lg border border-stone-200 bg-white p-5 sm:p-6"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-4"><span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-stone-900 text-[#FAF7F2]"><Clock3 aria-hidden="true" className="size-5" strokeWidth={1.5} /></span><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-serif text-xl text-stone-900">Absensi hari ini</h2><StatusBadge tone={attendanceState === 'exited' ? 'success' : isEntered ? 'success' : 'neutral'}>{attendanceState === 'exited' ? 'Sudah keluar' : isEntered ? 'Sudah masuk' : 'Belum absen'}</StatusBadge></div><p className="mt-1 text-sm text-stone-500">Jadwal masuk: 08.00 WIB</p></div></div><div className="flex flex-wrap items-center gap-3 sm:justify-end"><div className="mr-1 text-left sm:text-right"><p className="font-serif text-2xl text-stone-900">{clock.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p><p className="text-[11px] text-stone-500">Waktu sistem</p></div><button type="button" disabled={isEntered} onClick={() => submitAttendance('masuk')} className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50">{isEntered ? 'Sudah absen masuk' : 'Absen masuk'}</button><button type="button" disabled={!isEntered || attendanceState === 'exited'} onClick={() => submitAttendance('keluar')} className="rounded-md border border-stone-300 px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50">{attendanceState === 'exited' ? 'Sudah absen keluar' : 'Absen keluar'}</button></div></div>{message && <p className="mt-4 border-t border-stone-100 pt-3 text-xs text-stone-500" role="status">{message}</p>}</section>;
+  const hasEntered = ['present', 'late', 'exited'].includes(attendanceState);
+  const badgeTone = attendanceState === 'late' ? 'warning' : attendanceState === 'idle' ? 'neutral' : 'success';
+  const badgeLabel = attendanceState === 'idle' ? 'Belum Absen' : attendanceState === 'late' ? 'Terlambat' : attendanceState === 'exited' ? 'Sudah Absen Keluar' : 'Hadir';
+  const actionLabel = attendanceState === 'idle' ? 'Absen Masuk' : attendanceState === 'exited' ? 'Sudah Absen Keluar' : 'Absen Keluar';
+
+  return <section className="mb-8 rounded-lg border border-stone-200 bg-white p-5 sm:p-6"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-4"><span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-stone-900 text-[#FAF7F2]"><Clock3 aria-hidden="true" className="size-5" strokeWidth={1.5} /></span><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-serif text-xl text-stone-900">Absensi pustakawan</h2><StatusBadge tone={badgeTone}>{badgeLabel}</StatusBadge></div><p className="mt-1 text-sm text-stone-500">Jadwal masuk: 08.00 WIB{entryTime && <span> · Masuk pukul {entryTime}</span>}</p></div></div><div className="flex flex-wrap items-center gap-3 sm:justify-end"><div className="mr-1 text-left sm:text-right"><p className="font-serif text-2xl text-stone-900">{clock.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p><p className="text-[11px] text-stone-500">Waktu sistem</p></div><button type="button" disabled={attendanceState === 'exited'} onClick={() => submitAttendance(hasEntered ? 'keluar' : 'masuk')} className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50">{actionLabel}</button></div></div>{message && <p className="mt-4 border-t border-stone-100 pt-3 text-xs text-stone-500" role="status">{message}</p>}</section>;
 }
 
 function RecentLoans({ loans, memberOnly = false }) {
@@ -191,7 +203,11 @@ function Overview({ user, role, onViewChange, loans }) {
 }
 
 function BookCover({ book, large = false }) {
-  return <div className={`relative flex ${large ? 'h-64' : 'h-48'} items-end overflow-hidden bg-gradient-to-br ${book.cover || 'from-stone-300 to-stone-600'} p-5`}><div className="absolute inset-0 bg-[linear-gradient(120deg,transparent_20%,rgba(255,255,255,.18),transparent_60%)]" /><div className="relative border-l border-white/50 pl-3 text-white"><p className="font-serif text-3xl leading-none tracking-[-0.05em]">{book.initials || 'BK'}</p><p className="mt-2 max-w-[120px] text-[9px] uppercase tracking-[0.16em] text-white/75">Koleksi buku</p></div></div>;
+  return <div className={`relative flex ${large ? 'h-64' : 'h-48'} items-end overflow-hidden bg-gradient-to-br ${book.cover || 'from-stone-300 to-stone-600'} p-5`}>
+    {book.coverUrl && <img src={book.coverUrl} alt={`Sampul ${book.judul}`} className="absolute inset-0 size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+    <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent_20%,rgba(255,255,255,.18),transparent_60%)]" />
+    <div className="relative border-l border-white/50 pl-3 text-white"><p className="font-serif text-3xl leading-none tracking-[-0.05em]">{book.initials || 'BK'}</p><p className="mt-2 max-w-[120px] text-[9px] uppercase tracking-[0.16em] text-white/75">Koleksi buku</p></div>
+  </div>;
 }
 
 function Catalog({ books, onBookSelect }) {
@@ -220,11 +236,11 @@ function BookingModal({ book, onClose, onConfirm }) {
 }
 
 function AddBookModal({ onClose, onSave }) {
-  const [form, setForm] = useState({ judul: '', penulis: '', penerbit: '', genre: '', stok: '0' });
+  const [form, setForm] = useState({ judul: '', penulis: '', penerbit: '', genre: '', stok: '0', coverUrl: '' });
   const update = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
   const submit = (event) => { event.preventDefault(); onSave(form); };
-  const fields = [['judul', 'Judul Buku', 'text'], ['penulis', 'Penulis', 'text'], ['penerbit', 'Penerbit', 'text'], ['genre', 'Genre', 'text'], ['stok', 'Stok', 'number']];
-  return <ModalShell eyebrow="Koleksi" title="Tambah buku" onClose={onClose}><form onSubmit={submit}><div className="grid gap-4 p-5 sm:grid-cols-2">{fields.map(([name, label, type]) => <label key={name} className={name === 'judul' ? 'sm:col-span-2' : ''}><span className="mb-1.5 block text-xs font-medium text-stone-700">{label}</span><input required min={type === 'number' ? 0 : undefined} type={type} name={name} value={form[name]} onChange={update} className="h-10 w-full rounded-md border border-stone-200 bg-stone-50 px-3 text-sm text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200" /></label>)}</div><div className="flex justify-end gap-3 border-t border-stone-200 px-5 py-4"><button type="button" onClick={onClose} className="rounded-md border border-stone-300 px-4 py-2.5 text-xs font-medium text-stone-700 hover:bg-stone-50">Batal</button><button type="submit" className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] hover:bg-stone-800">Simpan buku</button></div></form></ModalShell>;
+  const inputClass = 'h-10 w-full rounded-md border border-stone-200 bg-stone-50 px-3 text-sm text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200';
+  return <ModalShell eyebrow="Koleksi" title="Tambah buku" onClose={onClose}><form onSubmit={submit}><div className="grid gap-4 p-5 sm:grid-cols-2"><label className="sm:col-span-2"><span className="mb-1.5 block text-xs font-medium text-stone-700">Judul Buku</span><input required type="text" name="judul" value={form.judul} onChange={update} className={inputClass} /></label><label><span className="mb-1.5 block text-xs font-medium text-stone-700">Penulis</span><input required type="text" name="penulis" value={form.penulis} onChange={update} className={inputClass} /></label><label><span className="mb-1.5 block text-xs font-medium text-stone-700">Stok</span><input required min="0" type="number" name="stok" value={form.stok} onChange={update} className={inputClass} /></label><label><span className="mb-1.5 block text-xs font-medium text-stone-700">Penerbit</span><select required name="penerbit" value={form.penerbit} onChange={update} className={inputClass}><option value="">Pilih penerbit</option>{['Lentera Dipantara', 'Bentang Pustaka', 'Kompas', 'KPG'].map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label><span className="mb-1.5 block text-xs font-medium text-stone-700">Genre</span><select required name="genre" value={form.genre} onChange={update} className={inputClass}><option value="">Pilih genre</option>{['Novel', 'Drama', 'Self-Improvement', 'Fiksi Sejarah'].map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label className="sm:col-span-2"><span className="mb-1.5 block text-xs font-medium text-stone-700">URL Gambar Cover Buku <span className="font-normal text-stone-400">(opsional)</span></span><input type="url" name="coverUrl" value={form.coverUrl} onChange={update} placeholder="https://contoh.com/cover-buku.jpg" className={inputClass} /></label></div><div className="flex justify-end gap-3 border-t border-stone-200 px-5 py-4"><button type="button" onClick={onClose} className="rounded-md border border-stone-300 px-4 py-2.5 text-xs font-medium text-stone-700 hover:bg-stone-50">Batal</button><button type="submit" className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] hover:bg-stone-800">Simpan buku</button></div></form></ModalShell>;
 }
 
 function TransactionModal({ books, onClose, onSave }) {
@@ -242,8 +258,26 @@ function LoansManagement({ loans, books, onNewTransaction }) {
   return <><PageHeader eyebrow="Sirkulasi" title="Peminjaman & pengembalian" description="Catat transaksi peminjaman dan pantau batas pengembalian." action={<button type="button" onClick={onNewTransaction} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Transaksi Baru</button>} /><div className="mb-5 grid gap-4 sm:grid-cols-3"><StatCard label="Sedang dipinjam" value="2" detail="Transaksi aktif" icon={BookOpenCheck} accent="green" /><StatCard label="Jatuh tempo minggu ini" value="1" detail="Perlu ditindaklanjuti" icon={Clock3} accent="amber" /><StatCard label="Terlambat" value="1" detail="Total transaksi terlambat" icon={CircleAlert} accent="rose" /></div><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Kode transaksi</th><th className="px-5 py-3 font-medium">Peminjam</th><th className="px-5 py-3 font-medium">Buku</th><th className="px-5 py-3 font-medium">Tanggal</th><th className="px-5 py-3 font-medium">Denda</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{loans.map((loan) => <tr key={loan.id}><td className="px-6 py-4 font-mono text-xs text-stone-600">{loan.code}</td><td className="px-5 py-4 font-medium text-stone-800">{loan.member}</td><td className="px-5 py-4 text-stone-600">{loan.book}</td><td className="px-5 py-4 text-stone-600">{loan.date}<span className="block text-xs text-stone-400">s/d {loan.due}</span></td><td className="px-5 py-4 text-stone-600">{formatRupiah(loan.fine)}</td><td className="px-5 py-4"><StatusBadge tone={loan.status === 'Terlambat' ? 'danger' : loan.status === 'Selesai' ? 'success' : 'warning'}>{loan.status}</StatusBadge></td></tr>)}</tbody></table></div></section>{books.length === 0 && <p className="mt-4 text-sm text-stone-500">Belum ada data buku untuk transaksi.</p>}</>;
 }
 
-function FacilitiesManagement() {
-  return <><PageHeader eyebrow="Operasional" title="Fasilitas" description="Data fasilitas dan kondisi fasilitas perpustakaan." action={<button type="button" className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Tambah fasilitas</button>} /><div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{MOCK_FACILITIES.map((facility) => <article key={facility.id} className="rounded-lg border border-stone-200 bg-white p-5"><div className="flex items-start justify-between"><span className="flex size-10 items-center justify-center rounded-md bg-stone-100 text-stone-700"><Building2 aria-hidden="true" className="size-5" strokeWidth={1.5} /></span><ChevronDown aria-hidden="true" className="size-4 rotate-[-90deg] text-stone-400" /></div><h2 className="mt-5 font-serif text-xl text-stone-900">{facility.name}</h2><div className="mt-4 flex items-end justify-between border-t border-stone-100 pt-4"><div><p className="font-serif text-2xl text-stone-900">{facility.quantity}</p><p className="text-xs text-stone-500">unit</p></div><StatusBadge tone={facility.condition === 'Baik' ? 'success' : 'warning'}>{facility.condition}</StatusBadge></div></article>)}</div></>;
+function FacilityPill({ label, value, tone }) {
+  const styles = {
+    success: 'border-[#c9dacd] bg-[#edf5ee] text-[#3e7251]',
+    warning: 'border-[#ead9b8] bg-[#faf4e7] text-[#977333]',
+    danger: 'border-[#e7caca] bg-[#fcf0f0] text-[#a25d5d]',
+  };
+  return <span className={`inline-flex items-center justify-between gap-2 rounded-full border px-3 py-1.5 text-xs font-medium ${styles[tone]}`}><span>{label}</span><strong>{value}</strong></span>;
+}
+
+function FacilityEditModal({ facility, onClose, onSave }) {
+  const [form, setForm] = useState({ good: String(facility.good), maintenance: String(facility.maintenance), broken: String(facility.broken) });
+  const update = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
+  const submit = (event) => { event.preventDefault(); onSave({ id: facility.id, good: Math.max(0, Number(form.good)), maintenance: Math.max(0, Number(form.maintenance)), broken: Math.max(0, Number(form.broken)) }); };
+  const total = Number(form.good || 0) + Number(form.maintenance || 0) + Number(form.broken || 0);
+  return <ModalShell eyebrow="Operasional" title={`Edit jumlah · ${facility.name}`} onClose={onClose}><form onSubmit={submit}><div className="flex flex-col gap-4 p-5"><p className="text-sm leading-6 text-stone-500">Perbarui jumlah unit sesuai kondisi fasilitas saat ini. Total unit akan dihitung otomatis.</p>{[['good', 'Baik'], ['maintenance', 'Perlu Perawatan'], ['broken', 'Rusak']].map(([name, label]) => <label key={name}><span className="mb-1.5 block text-xs font-medium text-stone-700">{label}</span><input required min="0" type="number" name={name} value={form[name]} onChange={update} className="h-10 w-full rounded-md border border-stone-200 bg-stone-50 px-3 text-sm text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200" /></label>)}<div className="rounded-md bg-stone-50 px-3 py-2 text-sm text-stone-600">Total unit baru: <strong className="text-stone-900">{total}</strong></div></div><div className="flex justify-end gap-3 border-t border-stone-200 px-5 py-4"><button type="button" onClick={onClose} className="rounded-md border border-stone-300 px-4 py-2.5 text-xs font-medium text-stone-700 hover:bg-stone-50">Batal</button><button type="submit" className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] hover:bg-stone-800">Simpan perubahan</button></div></form></ModalShell>;
+}
+
+function FacilitiesManagement({ facilities, onEdit }) {
+  const [selectedFacility, setSelectedFacility] = useState(null);
+  return <><PageHeader eyebrow="Operasional" title="Fasilitas" description="Lihat kondisi setiap fasilitas tanpa membuka rincian unit yang rumit." /><div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{facilities.map((facility) => { const total = facility.good + facility.maintenance + facility.broken; return <article key={facility.id} className="rounded-lg border border-stone-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><span className="flex size-10 items-center justify-center rounded-md bg-stone-100 text-stone-700"><Building2 aria-hidden="true" className="size-5" strokeWidth={1.5} /></span><button type="button" onClick={() => setSelectedFacility(facility)} className="rounded-md border border-stone-200 px-2.5 py-1.5 text-[11px] font-medium text-stone-600 hover:border-stone-400 hover:bg-stone-50">Edit Jumlah</button></div><h2 className="mt-5 font-serif text-xl text-stone-900">{facility.name}</h2><p className="mt-1 text-sm text-stone-500">Total: <strong className="text-stone-800">{total}</strong> unit</p><div className="mt-4 flex flex-col gap-2 border-t border-stone-100 pt-4"><FacilityPill label="Baik" value={facility.good} tone="success" /><FacilityPill label="Perlu Perawatan" value={facility.maintenance} tone="warning" /><FacilityPill label="Rusak" value={facility.broken} tone="danger" /></div></article>; })}</div>{selectedFacility && <FacilityEditModal facility={selectedFacility} onClose={() => setSelectedFacility(null)} onSave={(values) => { onEdit(values); setSelectedFacility(null); }} />}</>;
 }
 
 function StaffManagement() {
@@ -263,6 +297,7 @@ export default function Dashboard() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [books, setBooks] = useState(MOCK_BOOKS);
   const [loans, setLoans] = useState(MOCK_LOANS);
+  const [facilities, setFacilities] = useState(MOCK_FACILITIES);
   const [loadingBooks, setLoadingBooks] = useState(false);
   const [apiNotice, setApiNotice] = useState('');
   const [selectedBook, setSelectedBook] = useState(null);
@@ -299,7 +334,7 @@ export default function Dashboard() {
   const closeModal = () => { setIsModalOpen(false); setModalType(null); };
   const handleAddBook = (form) => {
     const title = form.judul.trim();
-    const book = { id_buku: Date.now(), judul: title, penulis: form.penulis.trim(), penerbit: form.penerbit.trim(), genre: form.genre.trim(), stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(title), cover: 'from-[#74604e] via-[#a58b70] to-[#d3c1a7]' };
+    const book = { id_buku: Date.now(), judul: title, penulis: form.penulis.trim(), penerbit: form.penerbit, genre: form.genre, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(title), coverUrl: form.coverUrl.trim(), cover: 'from-[#74604e] via-[#a58b70] to-[#d3c1a7]' };
     setBooks((current) => [...current, book]);
     setApiNotice('Buku baru ditambahkan ke daftar lokal.');
     closeModal();
@@ -309,8 +344,12 @@ export default function Dashboard() {
     setApiNotice('Transaksi baru ditambahkan ke daftar lokal.');
     closeModal();
   };
+  const handleFacilityEdit = ({ id, good, maintenance, broken }) => {
+    setFacilities((current) => current.map((facility) => facility.id === id ? { ...facility, good, maintenance, broken } : facility));
+    setApiNotice('Jumlah kondisi fasilitas berhasil diperbarui.');
+  };
   const handleBooking = (book) => setLoans((current) => [{ id: Date.now(), code: `TRX-2026-${String(current.length + 82).padStart(4, '0')}`, member: getDisplayName(user), book: book.judul, date: '21 Sep 2026', due: '28 Sep 2026', status: 'Dipinjam', fine: 0 }, ...current]);
 
-  return <div className="flex min-h-svh bg-[#FAF7F2] font-sans text-stone-900"><Sidebar activeView={activeView} onViewChange={setActiveView} role={role} user={user} onLogout={handleLogout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} /><div className="min-w-0 flex-1"><MobileHeader onOpenMenu={() => setMobileOpen(true)} onLogout={handleLogout} user={user} /><main className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10"><div className="mb-6 hidden items-center justify-between lg:flex"><p className="text-xs text-stone-500">Senin, 21 September 2026</p><div className="flex items-center gap-3"><button type="button" aria-label="Muat ulang katalog" onClick={loadBooks} className="rounded-md p-2 text-stone-500 hover:bg-white hover:text-stone-900"><RefreshCw aria-hidden="true" className={`size-4 ${loadingBooks ? 'animate-spin' : ''}`} /></button><div className="flex items-center gap-2 border-l border-stone-200 pl-4"><span className="flex size-8 items-center justify-center rounded-full bg-stone-900 text-xs font-medium text-[#FAF7F2]">{getInitials(getDisplayName(user))}</span><span className="text-sm text-stone-700">{getDisplayName(user)}</span></div></div></div>{apiNotice && <div className="mb-5 flex items-center gap-2 rounded-md border border-[#ead9b8] bg-[#faf4e7] px-4 py-3 text-xs text-[#85672c]" role="status"><CircleAlert aria-hidden="true" className="size-4 shrink-0" />{apiNotice}</div>}{activeView === 'overview' && <Overview user={user} role={role} onViewChange={setActiveView} loans={loans} />}{activeView === 'catalog' && <Catalog books={books} onBookSelect={setSelectedBook} />}{activeView === 'my-loans' && <><PageHeader eyebrow="Aktivitas pengguna" title="Peminjaman saya" description="Daftar buku yang sedang dipinjam dan riwayat transaksi." /><RecentLoans loans={loans} memberOnly /></>}{activeView === 'books' && <BooksManagement books={books} onAddBook={() => openModal('add-book')} />}{activeView === 'loans' && <LoansManagement loans={loans} books={books} onNewTransaction={() => openModal('transaction')} />}{activeView === 'facilities' && <FacilitiesManagement />}{activeView === 'staff' && role === 1 && <StaffManagement />}{activeView === 'attendance' && role === 1 && <AttendanceReport />}</main></div><BookingModal book={selectedBook} onClose={() => setSelectedBook(null)} onConfirm={handleBooking} />{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal books={books} onClose={closeModal} onSave={handleNewTransaction} />}</div>;
+  return <div className="flex min-h-svh bg-[#FAF7F2] font-sans text-stone-900"><Sidebar activeView={activeView} onViewChange={setActiveView} role={role} user={user} onLogout={handleLogout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} /><div className="min-w-0 flex-1"><MobileHeader onOpenMenu={() => setMobileOpen(true)} onLogout={handleLogout} user={user} /><main className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10"><div className="mb-6 hidden items-center justify-between lg:flex"><p className="text-xs text-stone-500">Senin, 21 September 2026</p><div className="flex items-center gap-3"><button type="button" aria-label="Muat ulang katalog" onClick={loadBooks} className="rounded-md p-2 text-stone-500 hover:bg-white hover:text-stone-900"><RefreshCw aria-hidden="true" className={`size-4 ${loadingBooks ? 'animate-spin' : ''}`} /></button><div className="flex items-center gap-2 border-l border-stone-200 pl-4"><span className="flex size-8 items-center justify-center rounded-full bg-stone-900 text-xs font-medium text-[#FAF7F2]">{getInitials(getDisplayName(user))}</span><span className="text-sm text-stone-700">{getDisplayName(user)}</span></div></div></div>{apiNotice && <div className="mb-5 flex items-center gap-2 rounded-md border border-[#ead9b8] bg-[#faf4e7] px-4 py-3 text-xs text-[#85672c]" role="status"><CircleAlert aria-hidden="true" className="size-4 shrink-0" />{apiNotice}</div>}{activeView === 'overview' && <Overview user={user} role={role} onViewChange={setActiveView} loans={loans} />}{activeView === 'catalog' && <Catalog books={books} onBookSelect={setSelectedBook} />}{activeView === 'my-loans' && <><PageHeader eyebrow="Aktivitas pengguna" title="Peminjaman saya" description="Daftar buku yang sedang dipinjam dan riwayat transaksi." /><RecentLoans loans={loans} memberOnly /></>}{activeView === 'books' && <BooksManagement books={books} onAddBook={() => openModal('add-book')} />}{activeView === 'loans' && <LoansManagement loans={loans} books={books} onNewTransaction={() => openModal('transaction')} />}{activeView === 'facilities' && <FacilitiesManagement facilities={facilities} onEdit={handleFacilityEdit} />}{activeView === 'staff' && role === 1 && <StaffManagement />}{activeView === 'attendance' && role === 1 && <AttendanceReport />}</main></div><BookingModal book={selectedBook} onClose={() => setSelectedBook(null)} onConfirm={handleBooking} />{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal books={books} onClose={closeModal} onSave={handleNewTransaction} />}</div>;
 }
 
