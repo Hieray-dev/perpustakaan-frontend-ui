@@ -33,11 +33,6 @@ const MOCK_BOOKS = [
   { id_buku: 4, judul: 'Laut Bercerita', penulis: 'Leila S. Chudori', penerbit: 'KPG', genre: 'Fiksi Sejarah', stok: 0, status: 'Dipinjam', initials: 'LB', description: 'Novel tentang kehilangan, persahabatan, dan ingatan keluarga dalam pusaran sejarah Indonesia.', cover: 'from-[#48595e] via-[#7c8d91] to-[#c0c8c4]' },
 ];
 
-const MOCK_USERS = [
-  { id: 1, name: 'Alya Prameswari', username: 'alya' },
-  { id: 2, name: 'Raka Mahendra', username: 'raka' },
-];
-
 const MOCK_LOANS = [
   { id: 1, code: 'TRX-2026-0821', member: 'Alya Prameswari', book: 'Laut Bercerita', date: '18 Sep 2026', due: '25 Sep 2026', status: 'Dipinjam', fine: 0 },
   { id: 2, code: 'TRX-2026-0817', member: 'Raka Mahendra', book: 'Laskar Pelangi', date: '12 Sep 2026', due: '19 Sep 2026', status: 'Terlambat', fine: 15000 },
@@ -51,13 +46,12 @@ const MOCK_FACILITIES = [
   { id: 4, name: 'Loker Penitipan', good: 30, maintenance: 2, broken: 0 },
 ];
 
-const MOCK_STAFF = [
-  { id: 1, name: 'Admin Sistem', username: 'admin', role: 'Admin', shift: 'Administrasi', status: 'Aktif' },
-  { id: 2, name: 'Sinta Maharani', username: 'sinta', role: 'Pustakawan', shift: 'Pagi · 08.00–16.00', status: 'Aktif' },
-  { id: 3, name: 'Dimas Pratama', username: 'dimas', role: 'Pustakawan', shift: 'Siang · 12.00–20.00', status: 'Aktif' },
-];
-
 const ROLE_NAMES = { 1: 'Admin', 2: 'Pustakawan', 3: 'Pengunjung' };
+const STAFF_STORAGE_KEY = 'karyawan_data';
+const USERS_STORAGE_KEY = 'registered_users';
+const ATTENDANCE_STORAGE_KEY = 'absensi_logs';
+const LEGACY_ATTENDANCE_STORAGE_KEY = 'absensi_data';
+const EXCLUDED_DUMMY_NAMES = new Set(['sinta maharani', 'dimas pratama', 'sinta', 'dimas']);
 
 function formatRupiah(value) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
@@ -73,14 +67,91 @@ function getInitials(name = 'Pengguna') {
   return name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase();
 }
 
-function readAttendanceData() {
+function parseLocalArray(key) {
   try {
-    const saved = window.localStorage.getItem('absensi_data');
-    const parsed = saved ? JSON.parse(saved) : [];
+    const value = window.localStorage.getItem(key);
+    const parsed = value ? JSON.parse(value) : [];
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
+}
+
+function isExcludedDummy(value) {
+  return EXCLUDED_DUMMY_NAMES.has(String(value || '').trim().toLowerCase());
+}
+
+function normalizeUser(value, index = 0) {
+  if (!value || typeof value !== 'object') return null;
+  const username = String(value.username || value.user_name || value.email || '').trim();
+  const name = String(value.nama || value.name || value.full_name || value.fullName || username).trim();
+  if (!name && !username) return null;
+  if (isExcludedDummy(name) || isExcludedDummy(username)) return null;
+  return {
+    id: value.id || value.id_user || `user-${username || index}`,
+    name: name || username,
+    username: username || name.toLowerCase().replace(/\s+/g, '-'),
+    role: value.role || ROLE_NAMES[Number(value.id_role)] || 'Pustakawan',
+    shift: value.shift || 'Belum diatur',
+    status: value.status || 'Aktif',
+  };
+}
+
+function readRegisteredUsers(activeUser) {
+  const values = [activeUser, ...parseLocalArray(USERS_STORAGE_KEY), ...parseLocalArray('users'), ...parseLocalArray('user_list'), ...parseLocalArray('registeredUsers'), ...parseLocalArray(STAFF_STORAGE_KEY)];
+  const users = values.map((value, index) => normalizeUser(value, index)).filter(Boolean);
+  return Array.from(new Map(users.map((user) => [user.username || user.name, user])).values());
+}
+
+function normalizeAttendanceRecords(values) {
+  const records = new Map();
+  values.forEach((entry, index) => {
+    if (!entry || typeof entry !== 'object') return;
+    const rawDate = entry.tanggal || entry.date || entry.waktu || entry.timestamp;
+    const date = String(rawDate || new Date().toISOString()).slice(0, 10);
+    const name = String(entry.nama || entry.name || entry.username || '').trim();
+    if (!name || isExcludedDummy(name)) return;
+    const key = `${name}-${date}`;
+    const previous = records.get(key) || { id: entry.id || `attendance-${index}`, nama: name, tanggal: date, jamMasuk: '', jamKeluar: '', status: 'Hadir' };
+    const time = entry.jamMasuk || entry.time || (entry.waktu ? new Date(entry.waktu).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) : '');
+    if (entry.tipe === 'keluar' || entry.type === 'keluar') previous.jamKeluar = entry.jamKeluar || time;
+    else if (entry.tipe === 'masuk' || entry.type === 'masuk') previous.jamMasuk = entry.jamMasuk || time;
+    else {
+      previous.jamMasuk = entry.jamMasuk || previous.jamMasuk || time;
+      previous.jamKeluar = entry.jamKeluar || previous.jamKeluar;
+    }
+    previous.status = entry.status || previous.status || 'Hadir';
+    records.set(key, previous);
+  });
+  return Array.from(records.values());
+}
+
+function readAttendanceData() {
+  const logs = parseLocalArray(ATTENDANCE_STORAGE_KEY);
+  const legacy = parseLocalArray(LEGACY_ATTENDANCE_STORAGE_KEY);
+  return normalizeAttendanceRecords([...logs, ...legacy]);
+}
+
+function writeAttendanceData(records) {
+  window.localStorage.setItem(ATTENDANCE_STORAGE_KEY, JSON.stringify(records));
+  window.dispatchEvent(new CustomEvent('absensi_data_updated', { detail: records }));
+}
+
+function readStaffData(activeUser) {
+  const savedStaff = parseLocalArray(STAFF_STORAGE_KEY).map(normalizeUser).filter(Boolean);
+  const registeredUsers = readRegisteredUsers(activeUser);
+  const attendanceUsers = readAttendanceData().map((record, index) => normalizeUser({ name: record.nama, username: record.username }, `attendance-${index}`)).filter(Boolean);
+  const staff = new Map([...savedStaff, ...registeredUsers].map((member) => [member.username || member.name, member]));
+  attendanceUsers.forEach((member) => {
+    const key = member.username || member.name;
+    if (!staff.has(key)) staff.set(key, member);
+  });
+  return Array.from(staff.values());
+}
+
+function saveStaffData(staff) {
+  window.localStorage.setItem(STAFF_STORAGE_KEY, JSON.stringify(staff));
+  window.dispatchEvent(new CustomEvent('karyawan_data_updated', { detail: staff }));
 }
 
 function downloadCsv(filename, headers, rows) {
@@ -185,8 +256,21 @@ function AttendanceWidget({ user }) {
 
   useEffect(() => {
     const timer = window.setInterval(() => setClock(new Date()), 1000);
-    return () => window.clearInterval(timer);
-  }, []);
+    const syncCurrentAttendance = (event) => {
+      const records = Array.isArray(event.detail) ? event.detail : readAttendanceData();
+      const todayRecord = records.find((record) => record.nama === displayName && record.tanggal === new Date().toISOString().slice(0, 10));
+      if (!todayRecord) return;
+      setEntryTime(todayRecord.jamMasuk || '');
+      setAttendanceState(todayRecord.jamKeluar ? 'exited' : todayRecord.status === 'Terlambat' ? 'late' : 'present');
+    };
+    window.addEventListener('absensi_data_updated', syncCurrentAttendance);
+    window.addEventListener('storage', syncCurrentAttendance);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('absensi_data_updated', syncCurrentAttendance);
+      window.removeEventListener('storage', syncCurrentAttendance);
+    };
+  }, [displayName]);
 
   const submitAttendance = async (type) => {
     const recordedAt = new Date();
@@ -199,8 +283,7 @@ function AttendanceWidget({ user }) {
       ? { id: currentRecord?.id || Date.now(), nama: displayName, tanggal: today, jamMasuk: time, jamKeluar: '', status: isLate ? 'Terlambat' : 'Hadir' }
       : { ...(currentRecord || { id: Date.now(), nama: displayName, tanggal: today, jamMasuk: entryTime, status: 'Hadir' }), jamKeluar: time };
     const nextRecords = currentRecord ? existingRecords.map((record) => record.id === currentRecord.id ? nextRecord : record) : [...existingRecords, nextRecord];
-    window.localStorage.setItem('absensi_data', JSON.stringify(nextRecords));
-    window.dispatchEvent(new CustomEvent('absensi_data_updated', { detail: nextRecords }));
+    writeAttendanceData(nextRecords);
     try {
       await api.post('/api/absensi', { tipe: type, waktu: recordedAt.toISOString(), nama: displayName });
       setMessage(type === 'masuk' ? 'Jam masuk berhasil dicatat.' : 'Jam keluar berhasil dicatat.');
@@ -320,7 +403,7 @@ function TransactionModal({ books, users, onClose, onSave }) {
 
 function BookDetailModal({ book, onClose }) {
   if (!book) return null;
-  return <ModalShell eyebrow="Detail koleksi" title={book.judul} onClose={onClose}><div className="p-5"><div className="grid gap-5 sm:grid-cols-[150px_1fr]"><div className="overflow-hidden rounded-md"><BookCover book={book} large /></div><div><p className="text-sm leading-6 text-stone-500">{book.description || 'Deskripsi buku belum tersedia.'}</p><dl className="mt-5 grid gap-3 text-sm"><div className="flex justify-between gap-4 border-b border-stone-100 pb-2"><dt className="text-stone-500">Penulis</dt><dd className="text-right font-medium text-stone-800">{book.penulis}</dd></div><div className="flex justify-between gap-4 border-b border-stone-100 pb-2"><dt className="text-stone-500">Penerbit</dt><dd className="text-right font-medium text-stone-800">{book.penerbit || '-'}</dd></div><div className="flex justify-between gap-4 border-b border-stone-100 pb-2"><dt className="text-stone-500">Genre</dt><dd className="text-right font-medium text-stone-800">{book.genre || '-'}</dd></div><div className="flex justify-between gap-4"><dt className="text-stone-500">Stok</dt><dd className="text-right font-medium text-stone-800">{book.stok} unit</dd></div></dl></div></div></div><div className="flex justify-end border-t border-stone-200 px-5 py-4"><button type="button" onClick={onClose} className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] hover:bg-stone-800">Tutup</button></div></ModalShell>;
+  return <ModalShell eyebrow="Detail koleksi" title={book.judul} onClose={onClose}><div className="p-5"><div className="grid gap-5 sm:grid-cols-[150px_1fr]"><div className="overflow-hidden rounded-md"><BookCover book={book} large /></div><div><p className="text-sm leading-6 text-stone-500">{book.description || book.deskripsi || 'Deskripsi buku belum tersedia.'}</p><dl className="mt-5 grid gap-3 text-sm"><div className="flex justify-between gap-4 border-b border-stone-100 pb-2"><dt className="text-stone-500">Penulis</dt><dd className="text-right font-medium text-stone-800">{book.penulis}</dd></div><div className="flex justify-between gap-4 border-b border-stone-100 pb-2"><dt className="text-stone-500">Penerbit</dt><dd className="text-right font-medium text-stone-800">{book.penerbit || '-'}</dd></div><div className="flex justify-between gap-4 border-b border-stone-100 pb-2"><dt className="text-stone-500">Genre</dt><dd className="text-right font-medium text-stone-800">{book.genre || '-'}</dd></div><div className="flex justify-between gap-4"><dt className="text-stone-500">Stok</dt><dd className="text-right font-medium text-stone-800">{book.stok} unit</dd></div></dl></div></div></div><div className="flex justify-end border-t border-stone-200 px-5 py-4"><button type="button" onClick={onClose} className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] hover:bg-stone-800">Tutup</button></div></ModalShell>;
 }
 
 function BooksManagement({ books, onAddBook, onExport, onBookSelect }) {
@@ -362,28 +445,29 @@ function StaffModal({ onClose, onSave }) {
 }
 
 function StaffManagement({ staff, onAddStaff }) {
-  return <><PageHeader eyebrow="Administrasi" title="Karyawan & shift" description="Data pengguna internal, peran, dan jadwal shift." action={<button type="button" onClick={onAddStaff} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Tambah karyawan</button>} /><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Nama</th><th className="px-5 py-3 font-medium">Username</th><th className="px-5 py-3 font-medium">Peran</th><th className="px-5 py-3 font-medium">Jadwal shift</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{staff.map((member) => <tr key={member.id}><td className="px-6 py-4 font-medium text-stone-800">{member.name}</td><td className="px-5 py-4 text-stone-600">@{member.username}</td><td className="px-5 py-4 text-stone-600">{member.role}</td><td className="px-5 py-4 text-stone-600">{member.shift}</td><td className="px-5 py-4"><StatusBadge tone="success">{member.status}</StatusBadge></td></tr>)}</tbody></table></div></section></>;
+  return <><PageHeader eyebrow="Administrasi" title="Karyawan & shift" description="Data pengguna internal, peran, dan jadwal shift." action={<button type="button" onClick={onAddStaff} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Tambah karyawan</button>} /><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Nama</th><th className="px-5 py-3 font-medium">Username</th><th className="px-5 py-3 font-medium">Peran</th><th className="px-5 py-3 font-medium">Jadwal shift</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{staff.length ? staff.map((member) => <tr key={member.id}><td className="px-6 py-4 font-medium text-stone-800">{member.name}</td><td className="px-5 py-4 text-stone-600">@{member.username}</td><td className="px-5 py-4 text-stone-600">{member.role}</td><td className="px-5 py-4 text-stone-600">{member.shift}</td><td className="px-5 py-4"><StatusBadge tone="success">{member.status}</StatusBadge></td></tr>) : <tr><td colSpan="5" className="px-6 py-12 text-center text-sm text-stone-500">Belum ada data karyawan/absensi</td></tr>}</tbody></table></div></section></>;
 }
 
 function AttendanceReport({ attendanceRecords }) {
-  const fallbackRows = [['Sinta Maharani', '21 Sep 2026', '08.00', '07.56', 'Tepat waktu'], ['Dimas Pratama', '21 Sep 2026', '12.00', '12.08', 'Terlambat'], ['Sinta Maharani', '20 Sep 2026', '08.00', '07.58', 'Tepat waktu']];
-  const savedRows = attendanceRecords.map((record) => [record.nama, record.tanggal, '08.00', record.jamMasuk || '-', record.status === 'Terlambat' ? 'Terlambat' : 'Tepat waktu']);
-  const rows = [...savedRows, ...fallbackRows.filter((row) => !attendanceRecords.some((record) => record.nama === row[0] && record.tanggal === row[1]))];
+  const rows = attendanceRecords.map((record) => [record.nama, record.tanggal, '08.00', record.jamMasuk || '-', record.status === 'Terlambat' ? 'Terlambat' : 'Tepat waktu']);
+  const presentCount = attendanceRecords.filter((record) => record.status !== 'Terlambat').length;
+  const lateCount = attendanceRecords.filter((record) => record.status === 'Terlambat').length;
+  const attendanceRate = attendanceRecords.length ? `${Math.round((presentCount / attendanceRecords.length) * 100)}%` : '0%';
   const exportReport = () => downloadCsv('laporan-absensi.csv', ['Karyawan', 'Tanggal', 'Jadwal', 'Masuk aktual', 'Status'], rows);
-  return <><PageHeader eyebrow="Administrasi" title="Laporan absensi" description="Rekap kehadiran karyawan berdasarkan jadwal shift." action={<button type="button" onClick={exportReport} className="flex items-center justify-center gap-2 rounded-md border border-stone-300 px-4 py-3 text-xs font-semibold text-stone-700 hover:bg-stone-50"><ArrowDownToLine aria-hidden="true" className="size-4" /> Unduh laporan</button>} /><div className="mb-5 grid gap-4 sm:grid-cols-3"><StatCard label="Kehadiran bulan ini" value="96%" detail="Data September 2026" icon={Check} accent="green" /><StatCard label="Tepat waktu" value="82%" detail="Dari 124 jadwal" icon={Clock3} accent="stone" /><StatCard label="Tidak hadir" value="5" detail="Perlu ditinjau" icon={CircleAlert} accent="rose" /></div><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="border-b border-stone-200 px-6 py-5"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">September 2026</p><h2 className="mt-1 font-serif text-xl text-stone-900">Data absensi terbaru</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Karyawan</th><th className="px-5 py-3 font-medium">Tanggal</th><th className="px-5 py-3 font-medium">Jadwal</th><th className="px-5 py-3 font-medium">Masuk aktual</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{rows.map((row) => <tr key={`${row[0]}-${row[1]}`}><td className="px-6 py-4 font-medium text-stone-800">{row[0]}</td><td className="px-5 py-4 text-stone-600">{row[1]}</td><td className="px-5 py-4 text-stone-600">{row[2]} WIB</td><td className="px-5 py-4 text-stone-600">{row[3]} WIB</td><td className="px-5 py-4"><StatusBadge tone={row[4] === 'Terlambat' ? 'warning' : 'success'}>{row[4]}</StatusBadge></td></tr>)}</tbody></table></div></section></>;
+  return <><PageHeader eyebrow="Administrasi" title="Laporan absensi" description="Rekap kehadiran karyawan berdasarkan jadwal shift." action={<button type="button" onClick={exportReport} className="flex items-center justify-center gap-2 rounded-md border border-stone-300 px-4 py-3 text-xs font-semibold text-stone-700 hover:bg-stone-50"><ArrowDownToLine aria-hidden="true" className="size-4" /> Unduh laporan</button>} /><div className="mb-5 grid gap-4 sm:grid-cols-3"><StatCard label="Kehadiran tercatat" value={attendanceRate} detail={`${attendanceRecords.length} log absensi`} icon={Check} accent="green" /><StatCard label="Tepat waktu" value={presentCount} detail="Log tanpa keterlambatan" icon={Clock3} accent="stone" /><StatCard label="Terlambat" value={lateCount} detail="Perlu ditinjau" icon={CircleAlert} accent="rose" /></div><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="border-b border-stone-200 px-6 py-5"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">Riwayat tersimpan</p><h2 className="mt-1 font-serif text-xl text-stone-900">Data absensi terbaru</h2></div><div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Karyawan</th><th className="px-5 py-3 font-medium">Tanggal</th><th className="px-5 py-3 font-medium">Jadwal</th><th className="px-5 py-3 font-medium">Masuk aktual</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{rows.length ? rows.map((row) => <tr key={`${row[0]}-${row[1]}`}><td className="px-6 py-4 font-medium text-stone-800">{row[0]}</td><td className="px-5 py-4 text-stone-600">{row[1]}</td><td className="px-5 py-4 text-stone-600">{row[2]} WIB</td><td className="px-5 py-4 text-stone-600">{row[3]} WIB</td><td className="px-5 py-4"><StatusBadge tone={row[4] === 'Terlambat' ? 'warning' : 'success'}>{row[4]}</StatusBadge></td></tr>) : <tr><td colSpan="5" className="px-6 py-12 text-center text-sm text-stone-500">Belum ada data karyawan/absensi</td></tr>}</tbody></table></div></section></>;
 }
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const user = getUser() || { username: 'admin', id_role: 1 };
-  const role = Number(user.id_role) || 3;
+  const user = useMemo(() => getUser(), []);
+  const role = Number(user?.id_role) || 3;
   const [activeView, setActiveView] = useState('overview');
   const [mobileOpen, setMobileOpen] = useState(false);
   const [books, setBooks] = useState(MOCK_BOOKS);
-  const [users] = useState(MOCK_USERS);
+  const [users, setUsers] = useState(() => readRegisteredUsers(user));
   const [loans, setLoans] = useState(MOCK_LOANS);
   const [facilities, setFacilities] = useState(MOCK_FACILITIES);
-  const [karyawan, setKaryawan] = useState(MOCK_STAFF);
+  const [karyawan, setKaryawan] = useState(() => readStaffData(user));
   const [attendanceRecords, setAttendanceRecords] = useState(() => readAttendanceData());
   const [loadingBooks, setLoadingBooks] = useState(false);
   const [apiNotice, setApiNotice] = useState('');
@@ -418,15 +502,24 @@ export default function Dashboard() {
   }, [loadBooks, navigate]);
 
   useEffect(() => {
-    const syncAttendance = (event) => setAttendanceRecords(Array.isArray(event.detail) ? event.detail : readAttendanceData());
-    const syncFromStorage = () => setAttendanceRecords(readAttendanceData());
+    const syncAttendance = (event) => setAttendanceRecords(Array.isArray(event.detail) ? normalizeAttendanceRecords(event.detail) : readAttendanceData());
+    const syncStaff = () => {
+      setKaryawan(readStaffData(user));
+      setUsers(readRegisteredUsers(user));
+    };
+    const syncFromStorage = (event) => {
+      if (!event.key || event.key === ATTENDANCE_STORAGE_KEY || event.key === LEGACY_ATTENDANCE_STORAGE_KEY) setAttendanceRecords(readAttendanceData());
+      if (!event.key || event.key === STAFF_STORAGE_KEY || event.key === USERS_STORAGE_KEY) syncStaff();
+    };
     window.addEventListener('absensi_data_updated', syncAttendance);
+    window.addEventListener('karyawan_data_updated', syncStaff);
     window.addEventListener('storage', syncFromStorage);
     return () => {
       window.removeEventListener('absensi_data_updated', syncAttendance);
+      window.removeEventListener('karyawan_data_updated', syncStaff);
       window.removeEventListener('storage', syncFromStorage);
     };
-  }, []);
+  }, [user]);
 
   const handleLogout = () => { clearSession(); navigate('/login', { replace: true }); };
   const openModal = (type) => { setModalType(type); setIsModalOpen(true); };
@@ -444,7 +537,11 @@ export default function Dashboard() {
     closeModal();
   };
   const handleAddStaff = (form) => {
-    setKaryawan((current) => [...current, { id: Date.now(), ...form, status: 'Aktif' }]);
+    const newStaff = { id: Date.now(), ...form, name: form.name.trim(), username: form.username.trim(), shift: form.shift.trim(), status: 'Aktif' };
+    const nextStaff = [...karyawan, newStaff];
+    setKaryawan(nextStaff);
+    setUsers((current) => [...current.filter((member) => member.username !== newStaff.username), newStaff]);
+    saveStaffData(nextStaff);
     setApiNotice('Karyawan baru berhasil ditambahkan.');
     closeModal();
   };
