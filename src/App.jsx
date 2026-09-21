@@ -32,6 +32,7 @@ function App() {
       <Route path="/" element={<Login />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
+      <Route path="/demo/dashboard" element={<Dashboard demo />} />
 
       {/* Halaman yang butuh login */}
       <Route

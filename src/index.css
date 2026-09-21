@@ -1,5 +1,35 @@
 @import "tailwindcss";
 
+.library-dashboard,
+.dashboard-modal {
+  color-scheme: light;
+}
+
+.library-dashboard button:not(:disabled),
+.library-dashboard select,
+.dashboard-modal button:not(:disabled),
+.dashboard-modal select {
+  cursor: pointer;
+}
+
+.library-dashboard :is(button, a, input, select, textarea):focus-visible,
+.dashboard-modal :is(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid #78716c;
+  outline-offset: 3px;
+}
+
+.library-dashboard table {
+  border-collapse: collapse;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-dashboard *,
+  .dashboard-modal * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* Animasi modal login (Login.jsx) */
 @keyframes fade-in {
   from {

@@ -114,6 +114,7 @@ function LoginForm() {
 
       try {
         localStorage.setItem('user', JSON.stringify(data.user || {
+          id_user: data.id_user,
           username: data.username || username.trim(),
           id_role: data.id_role ?? null,
         }));
@@ -255,7 +256,8 @@ export default function Login() {
           <LoginForm />
         </div>
         <p className="mt-10 text-center text-[11px] leading-5 text-stone-500 lg:mt-0">
-          Satu akun. Banyak cerita untuk ditemukan.
+          <Link to="/demo/dashboard" className="rounded-sm text-stone-600 underline decoration-stone-300 underline-offset-4 hover:text-stone-900 focus-visible:ring-2 focus-visible:ring-stone-400">Jelajahi demo dashboard</Link>
+          <span className="mx-2 text-stone-300">·</span>Tanpa perlu masuk.
         </p>
       </section>
     </main>
