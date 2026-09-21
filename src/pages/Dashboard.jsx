@@ -33,12 +33,6 @@ const MOCK_BOOKS = [
   { id_buku: 4, judul: 'Laut Bercerita', penulis: 'Leila S. Chudori', penerbit: 'KPG', genre: 'Fiksi Sejarah', stok: 0, status: 'Dipinjam', initials: 'LB', description: 'Novel tentang kehilangan, persahabatan, dan ingatan keluarga dalam pusaran sejarah Indonesia.', cover: 'from-[#48595e] via-[#7c8d91] to-[#c0c8c4]' },
 ];
 
-const MOCK_LOANS = [
-  { id: 1, code: 'TRX-2026-0821', member: 'Alya Prameswari', book: 'Laut Bercerita', date: '18 Sep 2026', due: '25 Sep 2026', status: 'Dipinjam', fine: 0 },
-  { id: 2, code: 'TRX-2026-0817', member: 'Raka Mahendra', book: 'Laskar Pelangi', date: '12 Sep 2026', due: '19 Sep 2026', status: 'Terlambat', fine: 15000 },
-  { id: 3, code: 'TRX-2026-0810', member: 'Alya Prameswari', book: 'Filosofi Teras', date: '05 Sep 2026', due: '12 Sep 2026', status: 'Selesai', fine: 0 },
-];
-
 const MOCK_FACILITIES = [
   { id: 1, name: 'Ruang Baca Utama', good: 1, maintenance: 0, broken: 0 },
   { id: 2, name: 'Meja Baca Individual', good: 24, maintenance: 0, broken: 0 },
@@ -49,9 +43,17 @@ const MOCK_FACILITIES = [
 const ROLE_NAMES = { 1: 'Admin', 2: 'Pustakawan', 3: 'Pengunjung' };
 const STAFF_STORAGE_KEY = 'karyawan_data';
 const USERS_STORAGE_KEY = 'registered_users';
+const USERS_DATA_STORAGE_KEY = 'users_data';
+const LOANS_STORAGE_KEY = 'transaksi_peminjaman';
 const ATTENDANCE_STORAGE_KEY = 'absensi_logs';
 const LEGACY_ATTENDANCE_STORAGE_KEY = 'absensi_data';
 const EXCLUDED_DUMMY_NAMES = new Set(['sinta maharani', 'dimas pratama', 'sinta', 'dimas']);
+const DUMMY_LOAN_MEMBERS = new Set(['alya prameswari', 'raka mahendra', 'alya', 'raka']);
+const SHIFT_OPTIONS = [
+  { value: 'Shift Pagi (08.00 - 16.00)', label: 'Shift Pagi (08.00 - 16.00)' },
+  { value: 'Shift Siang (12.00 - 20.00)', label: 'Shift Siang (12.00 - 20.00)' },
+  { value: 'Shift Malam (20.00 - 04.00)', label: 'Shift Malam (20.00 - 04.00)' },
+];
 
 function formatRupiah(value) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
@@ -92,13 +94,13 @@ function normalizeUser(value, index = 0) {
     name: name || username,
     username: username || name.toLowerCase().replace(/\s+/g, '-'),
     role: value.role || ROLE_NAMES[Number(value.id_role)] || 'Pustakawan',
-    shift: value.shift || 'Belum diatur',
+    shift: value.shift || value.jadwal_shift || value.schedule || 'Belum diatur',
     status: value.status || 'Aktif',
   };
 }
 
 function readRegisteredUsers(activeUser) {
-  const values = [activeUser, ...parseLocalArray(USERS_STORAGE_KEY), ...parseLocalArray('users'), ...parseLocalArray('user_list'), ...parseLocalArray('registeredUsers'), ...parseLocalArray(STAFF_STORAGE_KEY)];
+  const values = [activeUser, ...parseLocalArray(USERS_STORAGE_KEY), ...parseLocalArray('users'), ...parseLocalArray('user_list'), ...parseLocalArray('registeredUsers'), ...parseLocalArray(STAFF_STORAGE_KEY), ...parseLocalArray(USERS_DATA_STORAGE_KEY)];
   const users = values.map((value, index) => normalizeUser(value, index)).filter(Boolean);
   return Array.from(new Map(users.map((user) => [user.username || user.name, user])).values());
 }
@@ -137,6 +139,57 @@ function writeAttendanceData(records) {
   window.dispatchEvent(new CustomEvent('absensi_data_updated', { detail: records }));
 }
 
+function formatTransactionDate(date = new Date()) {
+  return new Intl.DateTimeFormat('id-ID', { day: '2-digit', month: 'short', year: 'numeric' }).format(date);
+}
+
+function normalizeLoan(value, index = 0) {
+  if (!value || typeof value !== 'object') return null;
+  const member = String(value.member || value.nama_peminjam || value.peminjam || value.nama || '').trim();
+  const book = String(value.book || value.judul_buku || value.buku || '').trim();
+  if (!member && !book) return null;
+  if (DUMMY_LOAN_MEMBERS.has(member.toLowerCase())) return null;
+  return {
+    id: value.id || value.id_transaksi || `transaction-${index}`,
+    code: value.code || value.kode_transaksi || `TRX-${new Date().getFullYear()}-${String(index + 1).padStart(4, '0')}`,
+    member: member || 'Peminjam tidak diketahui',
+    book: book || 'Buku tidak diketahui',
+    date: value.date || value.tanggal_pinjam || formatTransactionDate(),
+    due: value.due || value.tanggal_kembali || value.batas_pengembalian || '-',
+    status: value.status || 'Dipinjam',
+    fine: Number(value.fine || value.denda || 0),
+  };
+}
+
+function readLoanData() {
+  const persistedLoans = parseLocalArray(LOANS_STORAGE_KEY);
+  const cleanedLoans = persistedLoans.map(normalizeLoan).filter(Boolean);
+  if (JSON.stringify(persistedLoans) !== JSON.stringify(cleanedLoans)) {
+    window.localStorage.setItem(LOANS_STORAGE_KEY, JSON.stringify(cleanedLoans));
+  }
+  return cleanedLoans;
+}
+
+function writeLoanData(loans) {
+  window.localStorage.setItem(LOANS_STORAGE_KEY, JSON.stringify(loans));
+  window.dispatchEvent(new CustomEvent('transaksi_peminjaman_updated', { detail: loans }));
+}
+
+function getUserShift(user) {
+  const username = String(user?.username || '').trim().toLowerCase();
+  const userId = user?.id || user?.id_user;
+  const matchingUser = readRegisteredUsers(user).find((item) => (username && item.username.toLowerCase() === username) || (userId && item.id === userId));
+  return matchingUser?.shift || user?.shift || 'Belum diatur';
+}
+
+function saveUserShift(member, shift) {
+  const currentUsers = readRegisteredUsers(member);
+  const nextUsers = currentUsers.map((user) => (user.username === member.username || user.id === member.id ? { ...user, shift } : user));
+  window.localStorage.setItem(USERS_DATA_STORAGE_KEY, JSON.stringify(nextUsers));
+  window.localStorage.setItem(STAFF_STORAGE_KEY, JSON.stringify(nextUsers));
+  window.dispatchEvent(new CustomEvent('karyawan_data_updated', { detail: nextUsers }));
+}
+
 function readStaffData(activeUser) {
   const savedStaff = parseLocalArray(STAFF_STORAGE_KEY).map(normalizeUser).filter(Boolean);
   const registeredUsers = readRegisteredUsers(activeUser);
@@ -151,6 +204,7 @@ function readStaffData(activeUser) {
 
 function saveStaffData(staff) {
   window.localStorage.setItem(STAFF_STORAGE_KEY, JSON.stringify(staff));
+  window.localStorage.setItem(USERS_DATA_STORAGE_KEY, JSON.stringify(staff));
   window.dispatchEvent(new CustomEvent('karyawan_data_updated', { detail: staff }));
 }
 
@@ -246,9 +300,15 @@ function StatCard({ label, value, detail, icon: Icon, accent = 'stone' }) {
   return <article className="rounded-lg border border-stone-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><p className="text-xs text-stone-500">{label}</p><span className={`flex size-9 items-center justify-center rounded-md ${iconStyles[accent]}`}><Icon aria-hidden="true" className="size-[17px]" strokeWidth={1.5} /></span></div><p className="mt-5 font-serif text-[30px] leading-none tracking-[-0.03em] text-stone-900">{value}</p><p className="mt-2 text-xs text-stone-500">{detail}</p></article>;
 }
 
+function getShiftStartMinutes(shift) {
+  const match = String(shift || '').match(/(\d{1,2})[.:](\d{2})/);
+  return match ? Number(match[1]) * 60 + Number(match[2]) : 8 * 60;
+}
+
 function AttendanceWidget({ user }) {
   const displayName = getDisplayName(user);
   const currentRecord = readAttendanceData().find((record) => record.nama === displayName && record.tanggal === new Date().toISOString().slice(0, 10));
+  const [shift, setShift] = useState(() => getUserShift(user));
   const [clock, setClock] = useState(new Date());
   const [attendanceState, setAttendanceState] = useState(() => currentRecord?.jamKeluar ? 'exited' : currentRecord?.status === 'Terlambat' ? 'late' : currentRecord ? 'present' : 'idle');
   const [entryTime, setEntryTime] = useState(() => currentRecord?.jamMasuk || '');
@@ -263,14 +323,19 @@ function AttendanceWidget({ user }) {
       setEntryTime(todayRecord.jamMasuk || '');
       setAttendanceState(todayRecord.jamKeluar ? 'exited' : todayRecord.status === 'Terlambat' ? 'late' : 'present');
     };
+    const syncCurrentShift = () => setShift(getUserShift(user));
     window.addEventListener('absensi_data_updated', syncCurrentAttendance);
+    window.addEventListener('karyawan_data_updated', syncCurrentShift);
     window.addEventListener('storage', syncCurrentAttendance);
+    window.addEventListener('storage', syncCurrentShift);
     return () => {
       window.clearInterval(timer);
       window.removeEventListener('absensi_data_updated', syncCurrentAttendance);
+      window.removeEventListener('karyawan_data_updated', syncCurrentShift);
       window.removeEventListener('storage', syncCurrentAttendance);
+      window.removeEventListener('storage', syncCurrentShift);
     };
-  }, [displayName]);
+  }, [displayName, user]);
 
   const submitAttendance = async (type) => {
     const recordedAt = new Date();
@@ -278,7 +343,8 @@ function AttendanceWidget({ user }) {
     const time = recordedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     const existingRecords = readAttendanceData();
     const currentRecord = existingRecords.find((record) => record.nama === displayName && record.tanggal === today);
-    const isLate = recordedAt.getHours() > 8 || (recordedAt.getHours() === 8 && recordedAt.getMinutes() > 0);
+    const scheduledStart = getShiftStartMinutes(shift);
+    const isLate = recordedAt.getHours() * 60 + recordedAt.getMinutes() > scheduledStart;
     const nextRecord = type === 'masuk'
       ? { id: currentRecord?.id || Date.now(), nama: displayName, tanggal: today, jamMasuk: time, jamKeluar: '', status: isLate ? 'Terlambat' : 'Hadir' }
       : { ...(currentRecord || { id: Date.now(), nama: displayName, tanggal: today, jamMasuk: entryTime, status: 'Hadir' }), jamKeluar: time };
@@ -303,21 +369,25 @@ function AttendanceWidget({ user }) {
   const badgeLabel = attendanceState === 'idle' ? 'Belum Absen' : attendanceState === 'late' ? 'Terlambat' : attendanceState === 'exited' ? 'Sudah Absen Keluar' : 'Hadir';
   const actionLabel = attendanceState === 'idle' ? 'Absen Masuk' : attendanceState === 'exited' ? 'Sudah Absen Keluar' : 'Absen Keluar';
 
-  return <section className="mb-8 rounded-lg border border-stone-200 bg-white p-5 sm:p-6"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-4"><span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-stone-900 text-[#FAF7F2]"><Clock3 aria-hidden="true" className="size-5" strokeWidth={1.5} /></span><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-serif text-xl text-stone-900">Absensi pustakawan</h2><StatusBadge tone={badgeTone}>{badgeLabel}</StatusBadge></div><p className="mt-1 text-sm text-stone-500">Jadwal masuk: 08.00 WIB{entryTime && <span> · Masuk pukul {entryTime}</span>}</p></div></div><div className="flex flex-wrap items-center gap-3 sm:justify-end"><div className="mr-1 text-left sm:text-right"><p className="font-serif text-2xl text-stone-900">{clock.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p><p className="text-[11px] text-stone-500">Waktu sistem</p></div><button type="button" disabled={attendanceState === 'exited'} onClick={() => submitAttendance(hasEntered ? 'keluar' : 'masuk')} className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50">{actionLabel}</button></div></div>{message && <p className="mt-4 border-t border-stone-100 pt-3 text-xs text-stone-500" role="status">{message}</p>}</section>;
+  return <section className="mb-8 rounded-lg border border-stone-200 bg-white p-5 sm:p-6"><div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-4"><span className="flex size-11 shrink-0 items-center justify-center rounded-md bg-stone-900 text-[#FAF7F2]"><Clock3 aria-hidden="true" className="size-5" strokeWidth={1.5} /></span><div><div className="flex flex-wrap items-center gap-2"><h2 className="font-serif text-xl text-stone-900">Absensi pustakawan</h2><StatusBadge tone={badgeTone}>{badgeLabel}</StatusBadge></div><p className="mt-1 text-sm text-stone-500">Jadwal masuk: {shift === 'Belum diatur' ? 'Belum diatur' : shift}{entryTime && <span> · Masuk pukul {entryTime}</span>}</p></div></div><div className="flex flex-wrap items-center gap-3 sm:justify-end"><div className="mr-1 text-left sm:text-right"><p className="font-serif text-2xl text-stone-900">{clock.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}</p><p className="text-[11px] text-stone-500">Waktu sistem</p></div><button type="button" disabled={attendanceState === 'exited'} onClick={() => submitAttendance(hasEntered ? 'keluar' : 'masuk')} className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50">{actionLabel}</button></div></div>{message && <p className="mt-4 border-t border-stone-100 pt-3 text-xs text-stone-500" role="status">{message}</p>}</section>;
 }
 
 function RecentLoans({ loans, memberOnly = false }) {
   const rows = memberOnly ? loans.slice(0, 2) : loans;
-  return <section className="min-w-0 rounded-lg border border-stone-200 bg-white"><div className="flex items-center justify-between border-b border-stone-200 px-5 py-4 sm:px-6"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">Data sirkulasi</p><h2 className="mt-1 font-serif text-xl text-stone-900">Peminjaman terkini</h2></div><ArrowRight aria-hidden="true" className="size-4 text-stone-400" /></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-stone-100 bg-stone-50/70 text-[11px] font-medium text-stone-500"><tr><th className="px-5 py-3 font-medium sm:px-6">Peminjam</th><th className="px-5 py-3 font-medium">Buku</th><th className="px-5 py-3 font-medium">Batas waktu</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{rows.map((loan) => <tr key={loan.id}><td className="px-5 py-4 sm:px-6"><p className="font-medium text-stone-800">{memberOnly ? 'Anda' : loan.member}</p><p className="mt-0.5 text-xs text-stone-500">{loan.code}</p></td><td className="px-5 py-4 text-stone-600">{loan.book}</td><td className="px-5 py-4 text-stone-600">{loan.due}</td><td className="px-5 py-4"><StatusBadge tone={loan.status === 'Terlambat' ? 'danger' : loan.status === 'Selesai' ? 'success' : 'warning'}>{loan.status}</StatusBadge></td></tr>)}</tbody></table></div></section>;
+  return <section className="min-w-0 rounded-lg border border-stone-200 bg-white"><div className="flex items-center justify-between border-b border-stone-200 px-5 py-4 sm:px-6"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">Data sirkulasi</p><h2 className="mt-1 font-serif text-xl text-stone-900">Peminjaman terkini</h2></div><ArrowRight aria-hidden="true" className="size-4 text-stone-400" /></div><div className="overflow-x-auto"><table className="w-full min-w-[620px] text-left text-sm"><thead className="border-b border-stone-100 bg-stone-50/70 text-[11px] font-medium text-stone-500"><tr><th className="px-5 py-3 font-medium sm:px-6">Peminjam</th><th className="px-5 py-3 font-medium">Buku</th><th className="px-5 py-3 font-medium">Batas waktu</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{rows.length ? rows.map((loan) => <tr key={loan.id}><td className="px-5 py-4 sm:px-6"><p className="font-medium text-stone-800">{memberOnly ? 'Anda' : loan.member}</p><p className="mt-0.5 text-xs text-stone-500">{loan.code}</p></td><td className="px-5 py-4 text-stone-600">{loan.book}</td><td className="px-5 py-4 text-stone-600">{loan.due}</td><td className="px-5 py-4"><StatusBadge tone={loan.status === 'Terlambat' ? 'danger' : loan.status === 'Selesai' ? 'success' : 'warning'}>{loan.status}</StatusBadge></td></tr>) : <tr><td colSpan="4" className="px-5 py-12 text-center text-sm text-stone-500">Belum ada sirkulasi peminjaman</td></tr>}</tbody></table></div></section>;
 }
 
-function Overview({ user, role, onViewChange, loans }) {
+function Overview({ user, role, onViewChange, loans, users }) {
   const displayName = getDisplayName(user);
   const isMember = role === 3;
+  const visibleLoans = isMember ? loans.filter((loan) => loan.member === displayName) : loans;
+  const activeLoans = visibleLoans.filter((loan) => loan.status === 'Dipinjam');
+  const lateLoans = visibleLoans.filter((loan) => loan.status === 'Terlambat');
+  const totalFines = visibleLoans.reduce((total, loan) => total + loan.fine, 0);
   return <>
     <div className="mb-8 flex flex-col gap-1 border-b border-stone-200 pb-6 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500">Sistem informasi perpustakaan</p><h1 className="mt-2 font-serif text-4xl font-normal tracking-[-0.04em] text-stone-900 sm:text-[46px]">Dashboard Perpustakaan</h1></div><p className="text-sm text-stone-500">Pengguna aktif: <span className="font-medium text-stone-800">{displayName}</span></p></div>
     {(role === 1 || role === 2) && <AttendanceWidget user={user} />}
-    {isMember ? <div className="grid gap-5 md:grid-cols-3"><StatCard label="Buku dipinjam" value="2" detail="1 jatuh tempo minggu ini" icon={BookOpenCheck} accent="stone" /><StatCard label="Total kunjungan" value="12" detail="Data tahun 2026" icon={CalendarDays} accent="green" /><StatCard label="Denda berjalan" value={formatRupiah(0)} detail="Tidak ada denda aktif" icon={ShieldCheck} accent="amber" /></div> : <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total koleksi buku" value="4" detail="Data katalog aktif" icon={BookOpen} accent="stone" /><StatCard label="Peminjaman aktif" value="2" detail="1 jatuh tempo minggu ini" icon={BookOpenCheck} accent="green" /><StatCard label="Denda terkumpul" value={formatRupiah(15000)} detail="Data bulan September 2026" icon={FileBarChart} accent="amber" /><StatCard label="Pengunjung terdaftar" value="2" detail="Data pengguna aktif" icon={Users} accent="rose" /></div>}
+    {isMember ? <div className="grid gap-5 md:grid-cols-3"><StatCard label="Buku dipinjam" value={activeLoans.length} detail={`${activeLoans.length} transaksi aktif`} icon={BookOpenCheck} accent="stone" /><StatCard label="Total kunjungan" value="-" detail="Belum ada data kunjungan" icon={CalendarDays} accent="green" /><StatCard label="Denda berjalan" value={formatRupiah(totalFines)} detail={`${lateLoans.length} transaksi terlambat`} icon={ShieldCheck} accent="amber" /></div> : <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4"><StatCard label="Total koleksi buku" value="-" detail="Data katalog aktif" icon={BookOpen} accent="stone" /><StatCard label="Peminjaman aktif" value={activeLoans.length} detail={`${lateLoans.length} transaksi terlambat`} icon={BookOpenCheck} accent="green" /><StatCard label="Denda terkumpul" value={formatRupiah(totalFines)} detail="Dari transaksi tersimpan" icon={FileBarChart} accent="amber" /><StatCard label="Pengunjung terdaftar" value={users.length} detail="Data pengguna aktif" icon={Users} accent="rose" /></div>}
     <div className="mt-5 grid gap-5 xl:grid-cols-[1.35fr_0.65fr]"><RecentLoans loans={loans} memberOnly={isMember} /><section className="rounded-lg border border-stone-200 bg-white p-5 sm:p-6"><div className="flex items-center justify-between"><div><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">Menu</p><h2 className="mt-1 font-serif text-xl text-stone-900">Akses cepat</h2></div><Settings2 aria-hidden="true" className="size-5 text-stone-400" /></div><div className="mt-6 flex flex-col gap-2">{(isMember ? [{ label: 'Buka katalog buku', view: 'catalog', icon: Search }, { label: 'Lihat peminjaman saya', view: 'my-loans', icon: CalendarDays }] : [{ label: 'Tambah buku', view: 'books', icon: Plus }, { label: 'Kelola peminjaman', view: 'loans', icon: BookOpenCheck }, ...(role === 1 ? [{ label: 'Lihat laporan absensi', view: 'attendance', icon: FileBarChart }] : [])]).map((item) => { const Icon = item.icon; return <button key={item.view} type="button" onClick={() => onViewChange(item.view)} className="flex items-center justify-between rounded-md border border-stone-200 px-3.5 py-3 text-left text-sm text-stone-700 transition hover:border-stone-400 hover:bg-stone-50"><span className="flex items-center gap-3"><Icon aria-hidden="true" className="size-4 text-stone-500" />{item.label}</span><ArrowRight aria-hidden="true" className="size-4 text-stone-400" /></button>; })}</div></section></div>
   </>;
 }
@@ -411,7 +481,7 @@ function BooksManagement({ books, onAddBook, onExport, onBookSelect }) {
 }
 
 function LoansManagement({ loans, books, onNewTransaction }) {
-  return <><PageHeader eyebrow="Sirkulasi" title="Peminjaman & pengembalian" description="Catat transaksi peminjaman dan pantau batas pengembalian." action={<button type="button" onClick={onNewTransaction} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Transaksi Baru</button>} /><div className="mb-5 grid gap-4 sm:grid-cols-3"><StatCard label="Sedang dipinjam" value="2" detail="Transaksi aktif" icon={BookOpenCheck} accent="green" /><StatCard label="Jatuh tempo minggu ini" value="1" detail="Perlu ditindaklanjuti" icon={Clock3} accent="amber" /><StatCard label="Terlambat" value="1" detail="Total transaksi terlambat" icon={CircleAlert} accent="rose" /></div><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Kode transaksi</th><th className="px-5 py-3 font-medium">Peminjam</th><th className="px-5 py-3 font-medium">Buku</th><th className="px-5 py-3 font-medium">Tanggal</th><th className="px-5 py-3 font-medium">Denda</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{loans.map((loan) => <tr key={loan.id}><td className="px-6 py-4 font-mono text-xs text-stone-600">{loan.code}</td><td className="px-5 py-4 font-medium text-stone-800">{loan.member}</td><td className="px-5 py-4 text-stone-600">{loan.book}</td><td className="px-5 py-4 text-stone-600">{loan.date}<span className="block text-xs text-stone-400">s/d {loan.due}</span></td><td className="px-5 py-4 text-stone-600">{formatRupiah(loan.fine)}</td><td className="px-5 py-4"><StatusBadge tone={loan.status === 'Terlambat' ? 'danger' : loan.status === 'Selesai' ? 'success' : 'warning'}>{loan.status}</StatusBadge></td></tr>)}</tbody></table></div></section>{books.length === 0 && <p className="mt-4 text-sm text-stone-500">Belum ada data buku untuk transaksi.</p>}</>;
+  return <><PageHeader eyebrow="Sirkulasi" title="Peminjaman & pengembalian" description="Catat transaksi peminjaman dan pantau batas pengembalian." action={<button type="button" onClick={onNewTransaction} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Transaksi Baru</button>} /><div className="mb-5 grid gap-4 sm:grid-cols-3"><StatCard label="Sedang dipinjam" value={loans.filter((loan) => loan.status === 'Dipinjam').length} detail="Transaksi aktif" icon={BookOpenCheck} accent="green" /><StatCard label="Jatuh tempo minggu ini" value={loans.filter((loan) => loan.status === 'Dipinjam' && loan.due !== '-').length} detail="Perlu ditindaklanjuti" icon={Clock3} accent="amber" /><StatCard label="Terlambat" value={loans.filter((loan) => loan.status === 'Terlambat').length} detail="Total transaksi terlambat" icon={CircleAlert} accent="rose" /></div><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Kode transaksi</th><th className="px-5 py-3 font-medium">Peminjam</th><th className="px-5 py-3 font-medium">Buku</th><th className="px-5 py-3 font-medium">Tanggal</th><th className="px-5 py-3 font-medium">Denda</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{loans.length ? loans.map((loan) => <tr key={loan.id}><td className="px-6 py-4 font-mono text-xs text-stone-600">{loan.code}</td><td className="px-5 py-4 font-medium text-stone-800">{loan.member}</td><td className="px-5 py-4 text-stone-600">{loan.book}</td><td className="px-5 py-4 text-stone-600">{loan.date}<span className="block text-xs text-stone-400">s/d {loan.due}</span></td><td className="px-5 py-4 text-stone-600">{formatRupiah(loan.fine)}</td><td className="px-5 py-4"><StatusBadge tone={loan.status === 'Terlambat' ? 'danger' : loan.status === 'Selesai' ? 'success' : 'warning'}>{loan.status}</StatusBadge></td></tr>) : <tr><td colSpan="6" className="px-6 py-12 text-center text-sm text-stone-500">Belum ada sirkulasi peminjaman</td></tr>}</tbody></table></div></section>{books.length === 0 && <p className="mt-4 text-sm text-stone-500">Belum ada data buku untuk transaksi.</p>}</>;
 }
 
 function FacilityPill({ label, value, tone }) {
@@ -444,8 +514,17 @@ function StaffModal({ onClose, onSave }) {
   return <ModalShell eyebrow="Administrasi" title="Tambah karyawan" onClose={onClose}><form onSubmit={submit}><div className="flex flex-col gap-4 p-5"><label><span className="mb-1.5 block text-xs font-medium text-stone-700">Nama Lengkap</span><input required name="name" value={form.name} onChange={update} className={inputClass} /></label><label><span className="mb-1.5 block text-xs font-medium text-stone-700">Username</span><input required name="username" value={form.username} onChange={update} className={inputClass} /></label><label><span className="mb-1.5 block text-xs font-medium text-stone-700">Role</span><select name="role" value={form.role} onChange={update} className={inputClass}><option>Pustakawan</option><option>Admin</option></select></label><label><span className="mb-1.5 block text-xs font-medium text-stone-700">Jadwal Shift</span><input required name="shift" value={form.shift} onChange={update} placeholder="Pagi · 08.00–16.00" className={inputClass} /></label></div><div className="flex justify-end gap-3 border-t border-stone-200 px-5 py-4"><button type="button" onClick={onClose} className="rounded-md border border-stone-300 px-4 py-2.5 text-xs font-medium text-stone-700 hover:bg-stone-50">Batal</button><button type="submit" className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] hover:bg-stone-800">Simpan karyawan</button></div></form></ModalShell>;
 }
 
-function StaffManagement({ staff, onAddStaff }) {
-  return <><PageHeader eyebrow="Administrasi" title="Karyawan & shift" description="Data pengguna internal, peran, dan jadwal shift." action={<button type="button" onClick={onAddStaff} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Tambah karyawan</button>} /><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[680px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Nama</th><th className="px-5 py-3 font-medium">Username</th><th className="px-5 py-3 font-medium">Peran</th><th className="px-5 py-3 font-medium">Jadwal shift</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{staff.length ? staff.map((member) => <tr key={member.id}><td className="px-6 py-4 font-medium text-stone-800">{member.name}</td><td className="px-5 py-4 text-stone-600">@{member.username}</td><td className="px-5 py-4 text-stone-600">{member.role}</td><td className="px-5 py-4 text-stone-600">{member.shift}</td><td className="px-5 py-4"><StatusBadge tone="success">{member.status}</StatusBadge></td></tr>) : <tr><td colSpan="5" className="px-6 py-12 text-center text-sm text-stone-500">Belum ada data karyawan/absensi</td></tr>}</tbody></table></div></section></>;
+function ShiftModal({ member, onClose, onSave }) {
+  const savedShift = SHIFT_OPTIONS.some((option) => option.value === member.shift) ? member.shift : '';
+  const [shift, setShift] = useState(savedShift);
+  const inputClass = 'h-10 w-full rounded-md border border-stone-200 bg-stone-50 px-3 text-sm text-stone-900 outline-none focus:border-stone-400 focus:ring-2 focus:ring-stone-200';
+  const submit = (event) => { event.preventDefault(); if (shift) onSave(shift); };
+  return <ModalShell eyebrow="Administrasi" title={`Modal Edit Shift · ${member.name}`} onClose={onClose}><form onSubmit={submit}><div className="flex flex-col gap-4 p-5"><label><span className="mb-1.5 block text-xs font-medium text-stone-700">Pilih jadwal shift</span><select required value={shift} onChange={(event) => setShift(event.target.value)} className={inputClass}><option value="">Pilih shift</option>{SHIFT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><span className="mt-1.5 block text-xs text-stone-500">Jadwal ini menjadi acuan waktu masuk pada widget absensi.</span></label></div><div className="flex justify-end gap-3 border-t border-stone-200 px-5 py-4"><button type="button" onClick={onClose} className="rounded-md border border-stone-300 px-4 py-2.5 text-xs font-medium text-stone-700 hover:bg-stone-50">Batal</button><button type="submit" className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] hover:bg-stone-800">Simpan shift</button></div></form></ModalShell>;
+}
+
+function StaffManagement({ staff, onAddStaff, onEditShift }) {
+  const [selectedMember, setSelectedMember] = useState(null);
+  return <><PageHeader eyebrow="Administrasi" title="Karyawan & shift" description="Data pengguna internal, peran, dan jadwal shift." action={<button type="button" onClick={onAddStaff} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Tambah karyawan</button>} /><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Nama</th><th className="px-5 py-3 font-medium">Username</th><th className="px-5 py-3 font-medium">Peran</th><th className="px-5 py-3 font-medium">Jadwal shift</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{staff.length ? staff.map((member) => <tr key={member.id}><td className="px-6 py-4 font-medium text-stone-800">{member.name}</td><td className="px-5 py-4 text-stone-600">@{member.username}</td><td className="px-5 py-4 text-stone-600">{member.role}</td><td className="px-5 py-4"><button type="button" onClick={() => setSelectedMember(member)} className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${member.shift === 'Belum diatur' ? 'border-[#ead9b8] bg-[#faf4e7] text-[#977333] hover:border-[#c9a765] hover:bg-[#f7eedb]' : 'border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-400 hover:bg-white'}`}>{member.shift === 'Belum diatur' ? 'Atur Shift' : member.shift}</button></td><td className="px-5 py-4"><StatusBadge tone="success">{member.status}</StatusBadge></td></tr>) : <tr><td colSpan="5" className="px-6 py-12 text-center text-sm text-stone-500">Belum ada data karyawan/absensi</td></tr>}</tbody></table></div></section>{selectedMember && <ShiftModal member={selectedMember} onClose={() => setSelectedMember(null)} onSave={(shift) => { onEditShift(selectedMember, shift); setSelectedMember(null); }} />}</>;
 }
 
 function AttendanceReport({ attendanceRecords }) {
@@ -465,7 +544,7 @@ export default function Dashboard() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [books, setBooks] = useState(MOCK_BOOKS);
   const [users, setUsers] = useState(() => readRegisteredUsers(user));
-  const [loans, setLoans] = useState(MOCK_LOANS);
+  const [loans, setLoans] = useState(() => readLoanData());
   const [facilities, setFacilities] = useState(MOCK_FACILITIES);
   const [karyawan, setKaryawan] = useState(() => readStaffData(user));
   const [attendanceRecords, setAttendanceRecords] = useState(() => readAttendanceData());
@@ -507,16 +586,20 @@ export default function Dashboard() {
       setKaryawan(readStaffData(user));
       setUsers(readRegisteredUsers(user));
     };
+    const syncLoans = (event) => setLoans(Array.isArray(event.detail) ? event.detail.map(normalizeLoan).filter(Boolean) : readLoanData());
     const syncFromStorage = (event) => {
       if (!event.key || event.key === ATTENDANCE_STORAGE_KEY || event.key === LEGACY_ATTENDANCE_STORAGE_KEY) setAttendanceRecords(readAttendanceData());
-      if (!event.key || event.key === STAFF_STORAGE_KEY || event.key === USERS_STORAGE_KEY) syncStaff();
+      if (!event.key || event.key === STAFF_STORAGE_KEY || event.key === USERS_STORAGE_KEY || event.key === USERS_DATA_STORAGE_KEY) syncStaff();
+      if (!event.key || event.key === LOANS_STORAGE_KEY) setLoans(readLoanData());
     };
     window.addEventListener('absensi_data_updated', syncAttendance);
     window.addEventListener('karyawan_data_updated', syncStaff);
+    window.addEventListener('transaksi_peminjaman_updated', syncLoans);
     window.addEventListener('storage', syncFromStorage);
     return () => {
       window.removeEventListener('absensi_data_updated', syncAttendance);
       window.removeEventListener('karyawan_data_updated', syncStaff);
+      window.removeEventListener('transaksi_peminjaman_updated', syncLoans);
       window.removeEventListener('storage', syncFromStorage);
     };
   }, [user]);
@@ -532,7 +615,10 @@ export default function Dashboard() {
     closeModal();
   };
   const handleNewTransaction = (form) => {
-    setLoans((current) => [{ id: Date.now(), code: `TRX-2026-${String(current.length + 822).padStart(4, '0')}`, member: form.member, book: form.book, date: '21 Sep 2026', due: form.due, status: 'Dipinjam', fine: 0 }, ...current]);
+    const newLoan = { id: Date.now(), code: `TRX-${new Date().getFullYear()}-${String(loans.length + 1).padStart(4, '0')}`, member: form.member, book: form.book, date: formatTransactionDate(), due: form.due, status: 'Dipinjam', fine: 0 };
+    const nextLoans = [newLoan, ...loans];
+    setLoans(nextLoans);
+    writeLoanData(nextLoans);
     setApiNotice('Transaksi baru ditambahkan ke daftar lokal.');
     closeModal();
   };
@@ -550,8 +636,6 @@ export default function Dashboard() {
     setFacilities((current) => current.map((facility) => facility.id === id ? { ...facility, good, maintenance, broken } : facility));
     setApiNotice('Jumlah kondisi fasilitas berhasil diperbarui.');
   };
-  const handleBooking = (book) => setLoans((current) => [{ id: Date.now(), code: `TRX-2026-${String(current.length + 82).padStart(4, '0')}`, member: getDisplayName(user), book: book.judul, date: '21 Sep 2026', due: '28 Sep 2026', status: 'Dipinjam', fine: 0 }, ...current]);
-
-  return <div className="flex min-h-svh bg-[#FAF7F2] font-sans text-stone-900"><Sidebar activeView={activeView} onViewChange={setActiveView} role={role} user={user} onLogout={handleLogout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} /><div className="min-w-0 flex-1"><MobileHeader onOpenMenu={() => setMobileOpen(true)} onLogout={handleLogout} user={user} /><main className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10"><div className="mb-6 hidden items-center justify-between lg:flex"><p className="text-xs text-stone-500">Senin, 21 September 2026</p><div className="flex items-center gap-3"><button type="button" aria-label="Muat ulang katalog" onClick={loadBooks} className="rounded-md p-2 text-stone-500 hover:bg-white hover:text-stone-900"><RefreshCw aria-hidden="true" className={`size-4 ${loadingBooks ? 'animate-spin' : ''}`} /></button><div className="flex items-center gap-2 border-l border-stone-200 pl-4"><span className="flex size-8 items-center justify-center rounded-full bg-stone-900 text-xs font-medium text-[#FAF7F2]">{getInitials(getDisplayName(user))}</span><span className="text-sm text-stone-700">{getDisplayName(user)}</span></div></div></div>{apiNotice && <div className="mb-5 flex items-center gap-2 rounded-md border border-[#ead9b8] bg-[#faf4e7] px-4 py-3 text-xs text-[#85672c]" role="status"><CircleAlert aria-hidden="true" className="size-4 shrink-0" />{apiNotice}</div>}{activeView === 'overview' && <Overview user={user} role={role} onViewChange={setActiveView} loans={loans} />}{activeView === 'catalog' && <Catalog books={books} onBookSelect={setSelectedBook} />}{activeView === 'my-loans' && <><PageHeader eyebrow="Aktivitas pengguna" title="Peminjaman saya" description="Daftar buku yang sedang dipinjam dan riwayat transaksi." /><RecentLoans loans={loans} memberOnly /></>}{activeView === 'books' && <BooksManagement books={books} onAddBook={() => openModal('add-book')} onExport={exportBooks} onBookSelect={setDetailBook} />}{activeView === 'loans' && <LoansManagement loans={loans} books={books} onNewTransaction={() => openModal('transaction')} />}{activeView === 'facilities' && <FacilitiesManagement facilities={facilities} onEdit={handleFacilityEdit} />}{activeView === 'staff' && role === 1 && <StaffManagement staff={karyawan} onAddStaff={() => openModal('add-staff')} />}{activeView === 'attendance' && role === 1 && <AttendanceReport attendanceRecords={attendanceRecords} />}</main>{detailBook && <BookDetailModal book={detailBook} onClose={() => setDetailBook(null)} />}{isModalOpen && modalType === 'add-staff' && <StaffModal onClose={closeModal} onSave={handleAddStaff} />}</div><BookingModal book={selectedBook} onClose={() => setSelectedBook(null)} onConfirm={handleBooking} />{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal books={books} users={users} onClose={closeModal} onSave={handleNewTransaction} />}</div>;
+  return <div className="flex min-h-svh bg-[#FAF7F2] font-sans text-stone-900"><Sidebar activeView={activeView} onViewChange={setActiveView} role={role} user={user} onLogout={handleLogout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} /><div className="min-w-0 flex-1"><MobileHeader onOpenMenu={() => setMobileOpen(true)} onLogout={handleLogout} user={user} /><main className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10"><div className="mb-6 hidden items-center justify-between lg:flex"><p className="text-xs text-stone-500">Senin, 21 September 2026</p><div className="flex items-center gap-3"><button type="button" aria-label="Muat ulang katalog" onClick={loadBooks} className="rounded-md p-2 text-stone-500 hover:bg-white hover:text-stone-900"><RefreshCw aria-hidden="true" className={`size-4 ${loadingBooks ? 'animate-spin' : ''}`} /></button><div className="flex items-center gap-2 border-l border-stone-200 pl-4"><span className="flex size-8 items-center justify-center rounded-full bg-stone-900 text-xs font-medium text-[#FAF7F2]">{getInitials(getDisplayName(user))}</span><span className="text-sm text-stone-700">{getDisplayName(user)}</span></div></div></div>{apiNotice && <div className="mb-5 flex items-center gap-2 rounded-md border border-[#ead9b8] bg-[#faf4e7] px-4 py-3 text-xs text-[#85672c]" role="status"><CircleAlert aria-hidden="true" className="size-4 shrink-0" />{apiNotice}</div>}{activeView === 'overview' && <Overview user={user} role={role} onViewChange={setActiveView} loans={loans} users={users} />}{activeView === 'catalog' && <Catalog books={books} onBookSelect={setSelectedBook} />}{activeView === 'my-loans' && <><PageHeader eyebrow="Aktivitas pengguna" title="Peminjaman saya" description="Daftar buku yang sedang dipinjam dan riwayat transaksi." /><RecentLoans loans={loans} memberOnly /></>}{activeView === 'books' && <BooksManagement books={books} onAddBook={() => openModal('add-book')} onExport={exportBooks} onBookSelect={setDetailBook} />}{activeView === 'loans' && <LoansManagement loans={loans} books={books} onNewTransaction={() => openModal('transaction')} />}{activeView === 'facilities' && <FacilitiesManagement facilities={facilities} onEdit={handleFacilityEdit} />}{activeView === 'staff' && role === 1 && <StaffManagement staff={karyawan} onAddStaff={() => openModal('add-staff')} onEditShift={(member, shift) => { const nextStaff = karyawan.map((item) => item.id === member.id ? { ...item, shift } : item); setKaryawan(nextStaff); saveUserShift(member, shift); setApiNotice(`Shift ${member.name} berhasil diperbarui.`); }} />}{activeView === 'attendance' && role === 1 && <AttendanceReport attendanceRecords={attendanceRecords} />}</main>{detailBook && <BookDetailModal book={detailBook} onClose={() => setDetailBook(null)} />}{isModalOpen && modalType === 'add-staff' && <StaffModal onClose={closeModal} onSave={handleAddStaff} />}</div><BookingModal book={selectedBook} onClose={() => setSelectedBook(null)} onConfirm={undefined} />{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal books={books} users={users} onClose={closeModal} onSave={handleNewTransaction} />}</div>;
 }
 
