@@ -1,5 +1,61 @@
 @import "tailwindcss";
 
+.dashboard {
+  color-scheme: light;
+}
+
+.dashboard button:not(:disabled), .dash-modal button:not(:disabled) {
+  cursor: pointer;
+}
+
+.dashboard :focus-visible, .dash-modal :focus-visible {
+  outline: 2px solid #78716c;
+  outline-offset: 3px;
+}
+
+.dash-button {
+  @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-md border px-4 py-2.5 text-[11px] font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+}
+
+.dash-button-primary {
+  @apply border-stone-900 bg-stone-900 text-[#FAF7F2] hover:bg-stone-800;
+}
+
+.dash-button-secondary {
+  @apply border-stone-200 bg-white text-stone-700 hover:bg-stone-50;
+}
+
+.dash-input {
+  @apply block min-h-10 w-full min-w-0 rounded-md border border-stone-200 bg-white px-3 py-2.5 text-xs text-stone-800 outline-none transition-colors placeholder:text-stone-400 focus:border-stone-400 disabled:opacity-50;
+}
+
+.dash-table {
+  @apply w-full border-collapse text-left text-[11px] text-stone-600;
+}
+
+.dash-table th {
+  @apply bg-[#fcfbf9] px-5 py-3 text-[9px] font-normal uppercase tracking-wider text-stone-400;
+}
+
+.dash-table td {
+  @apply border-t border-stone-100 px-5 py-3.5;
+}
+
+.dash-table tbody tr:hover {
+  @apply bg-[#fcfbf9];
+}
+
+.dash-modal {
+  color-scheme: light;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dashboard *, .dash-modal * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* Animasi modal login (Login.jsx) */
 @keyframes fade-in {
   from {

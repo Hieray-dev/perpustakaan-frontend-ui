@@ -35,13 +35,15 @@ function App() {
 
       {/* Halaman yang butuh login */}
       <Route
-        path="/dashboard"
+        path="/dashboard/:section?"
         element={
           <Protected>
             <Dashboard />
           </Protected>
         }
       />
+
+      <Route path="/demo/dashboard/:section?" element={<Dashboard preview />} />
 
       {/* Khusus admin */}
       <Route path="/admin" element={<RequireAdmin />}>

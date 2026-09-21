@@ -114,8 +114,11 @@ function LoginForm() {
 
       try {
         localStorage.setItem('user', JSON.stringify(data.user || {
+          id_user: data.id_user,
           username: data.username || username.trim(),
+          nama: data.nama,
           id_role: data.id_role ?? null,
+          id_shift: data.id_shift,
         }));
         localStorage.setItem('token', data.token);
       } catch {
@@ -238,6 +241,7 @@ function LoginForm() {
           Daftar
         </Link>
       </p>
+      <Link to="/demo/dashboard" className="mt-5 flex items-center justify-center gap-2 text-xs text-stone-500 underline decoration-stone-300 underline-offset-4 hover:text-stone-900">Jelajahi dashboard demo <ArrowRight aria-hidden="true" className="size-3" /></Link>
     </div>
   );
 }

@@ -1,203 +1,60 @@
-import { useEffect, useState, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import {
-  BookOpen,
-  LogOut,
-  RefreshCw,
-  Search,
-  Library,
-  User as UserIcon,
-  Loader2,
-} from 'lucide-react';
-import api from '../api/client';
-import { getToken, getUser, clearSession } from '../utils/auth';
+import { useState } from 'react';
+import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { ArrowRight, FlaskConical, Loader2, Plus, RefreshCw } from 'lucide-react';
+import { clearSession, getUser } from '../utils/auth';
+import { demoUsers, roleNames, userId } from '../features/dashboard/data';
+import useLibrary from '../features/dashboard/use-library';
+import DashboardShell from '../features/dashboard/shell';
+import Overview, { AttendanceWidget } from '../features/dashboard/overview';
+import Catalogue from '../features/dashboard/catalogue';
+import Transactions from '../features/dashboard/transactions';
+import { AttendanceReport, BookManagement, Employees, Facilities, ResourceEditor } from '../features/dashboard/resources';
+import { Button } from '../features/dashboard/ui';
 
-export default function Dashboard() {
+const titles = { '': 'Ringkasan', buku: 'Koleksi Buku', peminjaman: 'Peminjaman', fasilitas: 'Fasilitas', karyawan: 'Karyawan & Shift', absensi: 'Laporan Absensi' };
+const subtitles = { buku: 'Setiap buku punya cerita. Kelola dan hadirkan untuk pembaca.', peminjaman: 'Pantau perjalanan buku, dari rak hingga kembali.', fasilitas: 'Ruang yang nyaman untuk rasa ingin tahu yang besar.', karyawan: 'Orang-orang yang membuat perpustakaan terus bertumbuh.', absensi: 'Catatan kehadiran yang rapi, pelayanan yang terjaga.' };
+
+function DashboardContent({ user, preview, page }) {
   const navigate = useNavigate();
-  const user = getUser() || { username: 'Pengguna', id_role: null };
-  const [buku, setBuku] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [fetched, setFetched] = useState(false);
-  const [search, setSearch] = useState('');
+  const library = useLibrary(user, preview);
+  const [editor, setEditor] = useState(null);
+  const [notice, setNotice] = useState('');
+  const role = Number(user.id_role);
+  const member = role === 3;
+  const base = preview ? '/demo/dashboard' : '/dashboard';
+  const title = member ? page === 'peminjaman' ? 'Peminjaman Saya' : 'Katalog Buku' : titles[page];
+  const allowed = member ? ['', 'peminjaman'] : role === 2 ? ['', 'buku', 'peminjaman', 'fasilitas'] : Object.keys(titles);
+  const go = (destination) => navigate(`${base}${destination ? `/${destination}` : ''}${preview ? `?role=${role}` : ''}`);
+  const logout = () => { if (!preview) clearSession(); navigate('/login', { replace: true }); };
+  const data = library.data;
+  const scopedData = data && member ? { ...data, loans: data.loans.filter((loan) => String(loan.id_user) === String(userId(user))) } : data;
+  function edit(resource, record) { setNotice(''); setEditor({ resource, record }); }
+  async function save(resource, values, record) { await library.saveResource(resource, values, record); setNotice(data.mode === 'demo' ? 'Perubahan tersimpan dalam sesi demo.' : 'Perubahan berhasil disimpan.'); }
+  if (!allowed.includes(page)) return <Navigate to={`${base}${preview ? `?role=${role}` : ''}`} replace />;
+  return <DashboardShell user={user} preview={preview} onLogout={logout} pageTitle={title}>
+    <div className="mb-7 flex flex-wrap items-end justify-between gap-5"><div><p className="mb-3 text-[9px] font-medium uppercase tracking-[0.2em] text-stone-500">{member ? 'Ruang baca Anda' : 'Ruang kelola perpustakaan'}</p><h1 className="font-serif text-[34px] leading-[1.15] tracking-[-0.035em] sm:text-[38px]">{!page ? member ? 'Cerita berikutnya dimulai di sini.' : 'Setiap halaman, berarti.' : title}</h1><p className="mt-3 text-[11px] leading-6 text-stone-500">{!page ? `Selamat datang, ${user.username || user.nama}. ${member ? 'Temukan teman untuk perjalanan membaca Anda.' : 'Mari hadirkan pengalaman membaca yang lebih baik.'}` : subtitles[page]}</p></div>{!member && ['', 'buku', 'fasilitas', 'karyawan'].includes(page) && <Button disabled={!data || Boolean(library.error)} onClick={() => edit(page === 'fasilitas' ? 'facilities' : page === 'karyawan' ? 'users' : 'books')}><Plus className="size-3.5" />{page === 'fasilitas' ? 'Tambah fasilitas' : page === 'karyawan' ? 'Tambah karyawan' : 'Tambah buku'}</Button>}</div>
+    {(preview || data?.mode === 'demo') && <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-md border border-dashed border-stone-300 bg-[#f5f1e9] px-3.5 py-2.5"><div className="flex items-center gap-2 text-[10px] text-stone-600"><FlaskConical aria-hidden="true" className="size-3.5 shrink-0" /><p><span className="font-medium">Mode demo</span><span className="mx-2 text-stone-300">/</span>{data?.reason || 'Data contoh. Perubahan tidak dikirim ke server.'}</p></div>{preview ? <label className="flex items-center gap-2 text-[10px] text-stone-500">Lihat sebagai<select aria-label="Peran pratinjau" className="rounded border border-stone-200 bg-white px-2 py-1 text-[10px] text-stone-800" value={role} onChange={(event) => navigate(`${base}?role=${event.target.value}`)}>{Object.entries(roleNames).map(([id, name]) => <option value={id} key={id}>{name}</option>)}</select></label> : <button disabled={library.isValidating} onClick={library.reload} className="flex items-center gap-1.5 text-[10px] font-medium disabled:opacity-50"><RefreshCw className={`size-3 ${library.isValidating ? 'animate-spin' : ''}`} />Coba backend</button>}</div>}
+    {notice && <div role="status" className="mb-5 flex items-center justify-between rounded-md bg-[#eef2e9] px-4 py-3 text-xs text-[#536346]">{notice}<button aria-label="Tutup notifikasi" onClick={() => setNotice('')} className="ml-3 text-lg leading-none">×</button></div>}
+    {library.isLoading && <div role="status" className="flex items-center justify-center gap-3 py-24 text-sm text-stone-500"><Loader2 className="size-5 animate-spin motion-reduce:animate-none" />Memuat ruang perpustakaan…</div>}
+    {library.error && <div role="alert" className="rounded-lg border border-red-200 bg-red-50 p-6"><h2 className="font-serif text-xl">Data belum dapat ditampilkan.</h2><p className="mt-3 text-sm text-red-800">{library.error.message}</p><div className="mt-5 flex flex-wrap gap-3"><Button secondary onClick={library.reload} disabled={library.isValidating}>Coba lagi</Button><Button onClick={logout}>Kembali ke login <ArrowRight className="size-4" /></Button></div></div>}
+    {data && !library.error && <>
+      {!member && page === '' && <AttendanceWidget data={data} user={user} onAttendance={library.checkAttendance} />}
+      {page === '' && (member ? <Catalogue data={scopedData} user={user} onBorrow={library.borrowBook} onViewLoans={() => go('peminjaman')} /> : <Overview data={data} onNavigate={go} />)}
+      {page === 'buku' && <BookManagement data={data} onEdit={edit} />}
+      {page === 'peminjaman' && <Transactions data={scopedData} member={member} onProcess={library.processLoan} onBrowse={() => go('')} />}
+      {page === 'fasilitas' && <Facilities data={data} onEdit={edit} />}
+      {page === 'karyawan' && role === 1 && <Employees data={data} onEdit={edit} />}
+      {page === 'absensi' && role === 1 && <AttendanceReport data={data} />}
+      {editor && <ResourceEditor {...editor} data={data} onSave={save} onClose={() => setEditor(null)} />}
+    </>}
+  </DashboardShell>;
+}
 
-  const loadBuku = useCallback(async () => {
-    try {
-      setLoading(true);
-      setError('');
-      const res = await api.get('/buku');
-      setBuku(res.data);
-    } catch (err) {
-      const data = err?.response?.data;
-      setError(
-        typeof data === 'string' && data.trim()
-          ? data
-          : data?.message || 'Gagal memuat katalog buku.',
-      );
-    } finally {
-      setLoading(false);
-      setFetched(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    // Redirect ke login bila tidak ada token.
-    if (!getToken()) {
-      navigate('/', { replace: true });
-      return;
-    }
-    // Defer fetch agar tidak memanggil setState sinkron dalam effect (react-hooks rule).
-    const timer = setTimeout(loadBuku, 0);
-    return () => clearTimeout(timer);
-  }, [navigate, loadBuku]);
-
-  const handleLogout = () => {
-    clearSession();
-    navigate('/', { replace: true });
-  };
-
-  const filteredBuku = buku.filter(
-    (b) =>
-      (b.judul || '').toLowerCase().includes(search.toLowerCase()) ||
-      (b.penulis || '').toLowerCase().includes(search.toLowerCase()),
-  );
-
-  return (
-    <>
-      {/* Navbar */}
-      <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4">
-          <div className="flex items-center gap-2">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-600 text-white">
-              <BookOpen className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-sm font-bold leading-tight text-slate-800">Perpustakaan</p>
-              <p className="text-xs text-slate-400">Katalog Buku</p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="hidden items-center gap-2 rounded-full bg-slate-100 py-1.5 pl-1.5 pr-4 sm:flex">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-600 text-white">
-                <UserIcon className="h-4 w-4" />
-              </span>
-              <span className="text-sm font-medium text-slate-700">{user.username}</span>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="flex items-center gap-2 rounded-xl border border-slate-200 px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-red-50 hover:text-red-600"
-            >
-              <LogOut className="h-4 w-4" />
-              <span className="hidden sm:inline">Keluar</span>
-            </button>
-          </div>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-6xl px-4 py-8">
-        {/* Hero */}
-        <div className="mb-8 rounded-2xl bg-gradient-to-r from-cyan-600 to-cyan-500 p-6 text-white shadow-lg shadow-cyan-500/20 sm:p-8">
-          <h1 className="text-2xl font-bold sm:text-3xl">Selamat datang, {user.username}!</h1>
-          <p className="mt-2 max-w-xl text-sm text-cyan-50 sm:text-base">
-            Jelajahi koleksi buku di perpustakaan kami.
-          </p>
-        </div>
-
-        {/* Toolbar */}
-        <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800">
-            <Library className="h-5 w-5 text-cyan-600" />
-            Katalog Buku
-          </h2>
-
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1 sm:w-64">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder="Cari judul atau penulis..."
-                className="w-full rounded-xl border border-slate-200 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-              />
-            </div>
-            <button
-              onClick={loadBuku}
-              disabled={loading}
-              title="Muat ulang"
-              className="flex items-center justify-center rounded-xl border border-slate-200 p-2 text-slate-500 transition hover:bg-slate-50 disabled:opacity-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-
-        {/* Status */}
-        {error && (
-          <div className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-            {error}
-          </div>
-        )}
-
-        {loading && (
-          <div className="flex items-center justify-center py-20 text-slate-400">
-            <Loader2 className="h-6 w-6 animate-spin" />
-          </div>
-        )}
-
-        {!loading && fetched && filteredBuku.length === 0 && (
-          <div className="rounded-2xl border border-dashed border-slate-200 py-20 text-center">
-            <p className="text-sm text-slate-400">Tidak ada buku yang ditemukan.</p>
-          </div>
-        )}
-
-        {/* Grid Buku */}
-        {!loading && filteredBuku.length > 0 && (
-          <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredBuku.map((b) => (
-              <div
-                key={b.id_buku}
-                className="group overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:-translate-y-1 hover:shadow-lg"
-              >
-                <div className="flex h-44 items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
-                  {b.gambar ? (
-                    <img
-                      src={`http://localhost:8080/${b.gambar}`}
-                      alt={`Sampul ${b.judul}`}
-                      className="h-full w-full object-cover transition group-hover:scale-105"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                      }}
-                    />
-                  ) : (
-                    <BookOpen className="h-12 w-12 text-slate-300" />
-                  )}
-                </div>
-
-                <div className="p-4">
-                  <h3 className="line-clamp-1 font-semibold text-slate-800" title={b.judul}>
-                    {b.judul}
-                  </h3>
-                  <p className="mt-0.5 text-sm text-slate-500">{b.penulis}</p>
-                  <p className="mt-2 line-clamp-2 text-sm text-slate-400">{b.deskripsi}</p>
-                  <div className="mt-3 flex items-center justify-between">
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
-                        b.stok > 0
-                          ? 'bg-emerald-50 text-emerald-600'
-                          : 'bg-red-50 text-red-500'
-                      }`}
-                    >
-                      {b.stok > 0 ? `Stok: ${b.stok}` : 'Stok habis'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </main>
-    </>
-  );
+export default function Dashboard({ preview = false }) {
+  const { section = '' } = useParams();
+  const [params] = useSearchParams();
+  const demoRole = [1, 2, 3].includes(Number(params.get('role'))) ? Number(params.get('role')) : 1;
+  const user = preview ? demoUsers[demoRole] : getUser();
+  if (!user || ![1, 2, 3].includes(Number(user.id_role))) return <Navigate to="/login" replace />;
+  return <DashboardContent key={`${preview}-${userId(user)}-${user.id_role}`} user={user} preview={preview} page={section} />;
 }
