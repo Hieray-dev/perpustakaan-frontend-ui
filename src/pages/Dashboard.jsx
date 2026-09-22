@@ -48,6 +48,7 @@ const STAFF_STORAGE_KEY = 'karyawan_data';
 const USERS_STORAGE_KEY = 'registered_users';
 const USERS_DATA_STORAGE_KEY = 'users_data';
 const LOANS_STORAGE_KEY = 'transaksi_peminjaman';
+const BOOKS_STORAGE_KEY = 'books_data';
 const ATTENDANCE_STORAGE_KEY = 'absensi_logs';
 const LEGACY_ATTENDANCE_STORAGE_KEY = 'absensi_data';
 const LAST_ATTENDANCE_DATE_STORAGE_KEY = 'last_absensi_date';
@@ -105,8 +106,9 @@ function normalizeBook(value, index = 0) {
     isbn: String(value.isbn || value.ISBN || '').trim(),
     tanggal_terbit: publishedDate,
     tanggalTerbit: publishedDate,
-    bahasa: String(value.bahasa || value.language || '').trim(),
-    halaman: value.halaman || value.pages || '',
+    bahasa: String(value.bahasa || value.language || 'Indonesia').trim(),
+    jumlah_halaman: value.jumlah_halaman ?? value.halaman ?? value.pages ?? '',
+    halaman: value.jumlah_halaman ?? value.halaman ?? value.pages ?? '',
     cover_url: coverUrl,
     coverUrl,
     initials: value.initials || getInitials(title),
@@ -195,6 +197,14 @@ function normalizeAttendanceRecords(values) {
     records.set(key, previous);
   });
   return Array.from(records.values());
+}
+
+function readBookData() {
+  return parseLocalArray(BOOKS_STORAGE_KEY).map(normalizeBook).filter(Boolean);
+}
+
+function writeBookData(books) {
+  window.localStorage.setItem(BOOKS_STORAGE_KEY, JSON.stringify(books));
 }
 
 function readAttendanceData() {
@@ -532,7 +542,7 @@ function ModalShell({ title, eyebrow, onClose, children, wide = false }) {
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/45 p-3 backdrop-blur-[2px] sm:p-6" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><div role="dialog" aria-modal="true" aria-labelledby="modal-title" className={`mx-auto max-h-[calc(100vh-1.5rem)] w-full overflow-y-auto rounded-2xl border border-[#E5E0D8] bg-[#FAF7F2] shadow-[0_24px_80px_rgba(38,31,24,0.24)] ${wide ? 'max-w-5xl' : 'max-w-xl'}`}><div className="sticky top-0 z-10 flex items-start justify-between gap-5 border-b border-[#E5E0D8] bg-[#FAF7F2]/95 px-5 py-5 backdrop-blur sm:px-8"><div><p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-stone-500">{eyebrow}</p><h2 id="modal-title" className="mt-1.5 font-serif text-2xl tracking-[-0.03em] text-stone-950 sm:text-3xl">{title}</h2></div><button type="button" aria-label="Tutup dialog" onClick={onClose} className="flex size-9 shrink-0 items-center justify-center rounded-full border border-[#E5E0D8] bg-white text-stone-500 transition hover:border-stone-400 hover:text-stone-900"><X aria-hidden="true" className="size-4" /></button></div>{children}</div></div>;
 }
 function AddBookModal({ onClose, onSave, book = null }) {
-  const [form, setForm] = useState(() => book ? { judul: book.judul || '', penulis: book.penulis || '', penerbit: book.penerbit || '', genre: book.genre || '', stok: String(book.stok || 0), coverUrl: book.cover_url || book.coverUrl || '', isbn: book.isbn || book.ISBN || '', tanggalTerbit: book.tanggal_terbit || book.tanggalTerbit || '', description: book.description || book.deskripsi || '' } : { judul: '', penulis: '', penerbit: '', genre: '', stok: '0', coverUrl: '', isbn: '', tanggalTerbit: '', description: '' });
+  const [form, setForm] = useState(() => book ? { judul: book.judul || '', penulis: book.penulis || '', penerbit: book.penerbit || '', genre: book.genre || '', stok: String(book.stok || 0), coverUrl: book.cover_url || book.coverUrl || '', isbn: book.isbn || book.ISBN || '', tanggalTerbit: book.tanggal_terbit || book.tanggalTerbit || '', jumlah_halaman: String(book.jumlah_halaman ?? book.halaman ?? ''), bahasa: book.bahasa || 'Indonesia', description: book.description || book.deskripsi || '' } : { judul: '', penulis: '', penerbit: '', genre: '', stok: '0', coverUrl: '', isbn: '', tanggalTerbit: '', jumlah_halaman: '', bahasa: 'Indonesia', description: '' });
   const [publishers, setPublishers] = useState(['Lentera Dipantara', 'Bentang Pustaka', 'Kompas', 'KPG']);
   const [genres, setGenres] = useState(['Novel', 'Drama', 'Self-Improvement', 'Fiksi Sejarah']);
   const [customPublisher, setCustomPublisher] = useState(false);
@@ -542,7 +552,7 @@ function AddBookModal({ onClose, onSave, book = null }) {
   const submit = (event) => { event.preventDefault(); onSave(form); };
   const addOption = (field, value) => { const cleanValue = value.trim(); if (!cleanValue) return; if (field === 'penerbit') setPublishers((current) => [...new Set([...current, cleanValue])]); if (field === 'genre') setGenres((current) => [...new Set([...current, cleanValue])]); };
   const inputClass = 'h-11 w-full rounded-lg border border-[#E5E0D8] bg-[#FAF7F2] px-3.5 text-sm text-stone-900 shadow-sm outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200';
-  return <ModalShell eyebrow="Koleksi" title={book ? 'Edit data buku' : 'Tambah buku'} onClose={onClose}><form onSubmit={submit}><div className="grid gap-5 p-5 sm:grid-cols-2 sm:p-8"><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">Judul Buku</span><input required type="text" name="judul" value={form.judul} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Penulis</span><input required type="text" name="penulis" value={form.penulis} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Stok</span><input required min="0" type="number" name="stok" value={form.stok} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Penerbit</span>{customPublisher ? <div className="flex gap-2"><input required autoFocus name="penerbit" value={form.penerbit} onChange={update} placeholder="Tulis penerbit baru" className={inputClass} /><button type="button" onClick={() => { addOption('penerbit', form.penerbit); setCustomPublisher(false); }} className="shrink-0 rounded-lg border border-[#E5E0D8] bg-transparent px-3 text-xs text-stone-600 transition hover:bg-white">Pilih list</button></div> : <CustomDropdown value={form.penerbit} options={[{ value: '', label: 'Pilih penerbit' }, ...publishers, { value: '__new__', label: '+ Tambah Penerbit Baru' }]} onChange={(value) => chooseOption('penerbit', value)} ariaLabel="Pilih penerbit" />}</label><label><span className="mb-2 block text-xs font-medium text-stone-700">Genre</span>{customGenre ? <div className="flex gap-2"><input required autoFocus name="genre" value={form.genre} onChange={update} placeholder="Tulis genre baru" className={inputClass} /><button type="button" onClick={() => { addOption('genre', form.genre); setCustomGenre(false); }} className="shrink-0 rounded-lg border border-[#E5E0D8] bg-transparent px-3 text-xs text-stone-600 transition hover:bg-white">Pilih list</button></div> : <CustomDropdown value={form.genre} options={[{ value: '', label: 'Pilih genre' }, ...genres, { value: '__new__', label: '+ Tambah Genre Baru' }]} onChange={(value) => chooseOption('genre', value)} ariaLabel="Pilih genre" />}</label><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">URL Cover</span><input type="url" name="coverUrl" value={form.coverUrl} onChange={update} placeholder="https://..." className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">ISBN</span><input type="text" name="isbn" value={form.isbn} onChange={update} placeholder="978..." className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Tanggal Terbit</span><input type="text" name="tanggalTerbit" value={form.tanggalTerbit} onChange={update} placeholder="Bulan dan tahun" className={inputClass} /></label><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">Deskripsi Buku</span><textarea name="description" value={form.description} onChange={update} rows="4" className={`${inputClass} h-auto py-3`} /></label></div><div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#E5E0D8] bg-[#FAF7F2]/95 backdrop-blur px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-8"><button type="button" onClick={onClose} className="rounded-lg border border-[#E5E0D8] bg-transparent px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-white">Batal</button><button type="submit" className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">{book ? 'Simpan perubahan' : 'Simpan buku'}</button></div></form></ModalShell>;
+  return <ModalShell eyebrow="Koleksi" title={book ? 'Edit data buku' : 'Tambah buku'} onClose={onClose}><form onSubmit={submit}><div className="grid gap-5 p-5 sm:grid-cols-2 sm:p-8"><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">Judul Buku</span><input required type="text" name="judul" value={form.judul} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Penulis</span><input required type="text" name="penulis" value={form.penulis} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Stok</span><input required min="0" type="number" name="stok" value={form.stok} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Penerbit</span>{customPublisher ? <div className="flex gap-2"><input required autoFocus name="penerbit" value={form.penerbit} onChange={update} placeholder="Tulis penerbit baru" className={inputClass} /><button type="button" onClick={() => { addOption('penerbit', form.penerbit); setCustomPublisher(false); }} className="shrink-0 rounded-lg border border-[#E5E0D8] bg-transparent px-3 text-xs text-stone-600 transition hover:bg-white">Pilih list</button></div> : <CustomDropdown value={form.penerbit} options={[{ value: '', label: 'Pilih penerbit' }, ...publishers, { value: '__new__', label: '+ Tambah Penerbit Baru' }]} onChange={(value) => chooseOption('penerbit', value)} ariaLabel="Pilih penerbit" />}</label><label><span className="mb-2 block text-xs font-medium text-stone-700">Genre</span>{customGenre ? <div className="flex gap-2"><input required autoFocus name="genre" value={form.genre} onChange={update} placeholder="Tulis genre baru" className={inputClass} /><button type="button" onClick={() => { addOption('genre', form.genre); setCustomGenre(false); }} className="shrink-0 rounded-lg border border-[#E5E0D8] bg-transparent px-3 text-xs text-stone-600 transition hover:bg-white">Pilih list</button></div> : <CustomDropdown value={form.genre} options={[{ value: '', label: 'Pilih genre' }, ...genres, { value: '__new__', label: '+ Tambah Genre Baru' }]} onChange={(value) => chooseOption('genre', value)} ariaLabel="Pilih genre" />}</label><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">URL Cover</span><input type="url" name="coverUrl" value={form.coverUrl} onChange={update} placeholder="https://..." className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">ISBN</span><input type="text" name="isbn" value={form.isbn} onChange={update} placeholder="978..." className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Tanggal Terbit</span><input type="text" name="tanggalTerbit" value={form.tanggalTerbit} onChange={update} placeholder="Bulan dan tahun" className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Jumlah Halaman</span><input min="0" type="number" name="jumlah_halaman" value={form.jumlah_halaman} onChange={update} placeholder="Contoh: 250" className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Bahasa</span><CustomDropdown value={form.bahasa} options={['Indonesia', 'Inggris']} onChange={(value) => setForm((current) => ({ ...current, bahasa: value }))} ariaLabel="Pilih bahasa buku" /></label><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">Deskripsi Buku</span><textarea name="description" value={form.description} onChange={update} rows="4" className={`${inputClass} h-auto py-3`} /></label></div><div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#E5E0D8] bg-[#FAF7F2]/95 backdrop-blur px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-8"><button type="button" onClick={onClose} className="rounded-lg border border-[#E5E0D8] bg-transparent px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-white">Batal</button><button type="submit" className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">{book ? 'Simpan perubahan' : 'Simpan buku'}</button></div></form></ModalShell>;
 }
 function TransactionModal({ books, users, initialBook = null, onClose, onSave }) {
   const [form, setForm] = useState(() => ({ member: users[0]?.name || '', book: initialBook?.judul || books.find((item) => item.stok > 0)?.judul || '', manualMember: '', manualBook: '', due: getAutomaticDueDate() }));
@@ -558,11 +568,25 @@ function TransactionModal({ books, users, initialBook = null, onClose, onSave })
 }
 function BookDetailModal({ book, onClose, onBorrow, onEdit }) {
   const [expanded, setExpanded] = useState(false);
+  const [canExpandDescription, setCanExpandDescription] = useState(false);
+  const descriptionRef = useRef(null);
+  const description = book?.description || book?.deskripsi || 'Deskripsi buku belum diisi.';
+  const available = Number(book?.stok) > 0 || book?.status === 'Tersedia';
+  useEffect(() => {
+    const element = descriptionRef.current;
+    if (!element) return undefined;
+    const measureDescription = () => {
+      const hasThreeLines = element.scrollHeight > element.clientHeight + 1;
+      setCanExpandDescription(description.length >= 180 && hasThreeLines);
+    };
+    measureDescription();
+    window.addEventListener('resize', measureDescription);
+    return () => window.removeEventListener('resize', measureDescription);
+  }, [description]);
   if (!book) return null;
-  const description = book.description || book.deskripsi || 'Deskripsi buku belum diisi.';
-  const available = Number(book.stok) > 0 || book.status === 'Tersedia';
-  const specifications = [['ISBN', book.isbn || book.ISBN || 'Belum diisi'], ['Tanggal terbit', book.tanggal_terbit || book.tanggalTerbit || 'Belum diisi'], ['Jumlah halaman', book.halaman ? `${book.halaman} halaman` : 'Belum diisi'], ['Bahasa', book.bahasa || 'Belum diisi'], ['Stok tersedia', `${book.stok || 0} buku`]];
-  return <ModalShell eyebrow="Detail koleksi" title={book.judul} onClose={onClose} wide><div className="grid grid-cols-1 gap-8 p-5 md:grid-cols-12 md:p-8"><div className="md:col-span-4"><div className="overflow-hidden rounded-lg shadow-[0_12px_28px_rgba(74,59,45,0.12)]"><BookCover book={book} large /></div><div className="mt-4 flex flex-col gap-2"><button type="button" disabled={!available} onClick={() => onBorrow(book)} className="rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300">{available ? 'Pinjam Buku' : 'Stok Habis'}</button><button type="button" onClick={() => onEdit(book)} className="rounded-md border border-stone-300 px-4 py-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-50">Edit Data</button></div></div><div className="min-w-0 md:col-span-8"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#f4eee6] px-2.5 py-1 text-[10px] font-medium text-[#876a4c]">{book.genre || 'Tanpa genre'}</span><StatusBadge tone={available ? 'success' : 'neutral'}>{available ? 'Tersedia' : 'Dipinjam'}</StatusBadge></div><h3 className="mt-3 font-serif text-3xl leading-tight tracking-[-0.04em] text-stone-900">{book.judul}</h3><p className="mt-2 text-sm text-stone-500">{book.penulis} <span className="text-stone-300">·</span> {book.penerbit || 'Penerbit tidak tersedia'}</p><section className="mt-6 border-t border-stone-200 pt-5"><h4 className="font-serif text-lg text-stone-900">Deskripsi Buku</h4><p className={`mt-2 text-sm leading-6 text-stone-500 ${expanded ? '' : 'line-clamp-3'}`}>{description}</p>{description.length > 170 && <button type="button" onClick={() => setExpanded((current) => !current)} className="mt-2 text-xs font-semibold text-stone-800 underline underline-offset-4">{expanded ? 'Tampilkan lebih sedikit' : 'Baca selengkapnya'}</button>}</section><section className="mt-6 border-t border-stone-200 pt-5"><h4 className="font-serif text-lg text-stone-900">Detail Spesifikasi</h4><dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2.5 text-sm sm:grid-cols-2">{specifications.map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 border-b border-stone-100 pb-2.5"><dt className="text-stone-500">{label}</dt><dd className="text-right font-medium text-stone-800">{value}</dd></div>)}</dl></section></div></div><div className="flex justify-end border-t border-stone-200 px-5 py-4 md:px-8"><button type="button" onClick={onClose} className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] hover:bg-stone-800">Tutup</button></div></ModalShell>;
+  const pageCount = book.jumlah_halaman ?? book.halaman ?? book.pages;
+  const specifications = [['ISBN', book.isbn || book.ISBN || 'Belum diisi'], ['Tanggal terbit', book.tanggal_terbit || book.tanggalTerbit || 'Belum diisi'], ['Jumlah halaman', pageCount ? `${pageCount} halaman` : 'Belum diisi'], ['Bahasa', book.bahasa || 'Indonesia'], ['Stok tersedia', `${book.stok || 0} buku`]];
+  return <ModalShell eyebrow="Detail koleksi" title={book.judul} onClose={onClose} wide><div className="grid grid-cols-1 gap-8 p-5 md:grid-cols-12 md:p-8"><div className="md:col-span-4"><div className="overflow-hidden rounded-lg shadow-[0_12px_28px_rgba(74,59,45,0.12)]"><BookCover book={book} large /></div><div className="mt-4 flex flex-col gap-2"><button type="button" disabled={!available} onClick={() => onBorrow(book)} className="rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300">{available ? 'Pinjam Buku' : 'Stok Habis'}</button><button type="button" onClick={() => onEdit(book)} className="rounded-md border border-stone-300 px-4 py-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-50">Edit Data</button></div></div><div className="min-w-0 md:col-span-8"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#f4eee6] px-2.5 py-1 text-[10px] font-medium text-[#876a4c]">{book.genre || 'Tanpa genre'}</span><StatusBadge tone={available ? 'success' : 'neutral'}>{available ? 'Tersedia' : 'Dipinjam'}</StatusBadge></div><h3 className="mt-3 font-serif text-3xl leading-tight tracking-[-0.04em] text-stone-900">{book.judul}</h3><p className="mt-2 text-sm text-stone-500">{book.penulis} <span className="text-stone-300">·</span> {book.penerbit || 'Penerbit tidak tersedia'}</p><section className="mt-6 border-t border-stone-200 pt-5"><h4 className="font-serif text-lg text-stone-900">Deskripsi Buku</h4><p ref={descriptionRef} className={`mt-2 text-sm leading-6 text-stone-500 ${expanded ? '' : 'line-clamp-3'}`}>{description}</p>{canExpandDescription && <button type="button" onClick={() => setExpanded((current) => !current)} className="mt-2 text-xs font-semibold text-stone-800 underline underline-offset-4">{expanded ? 'Tampilkan lebih sedikit' : 'Baca selengkapnya'}</button>}</section><section className="mt-6 border-t border-stone-200 pt-5"><h4 className="font-serif text-lg text-stone-900">Detail Spesifikasi</h4><dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2.5 text-sm sm:grid-cols-2">{specifications.map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 border-b border-stone-100 pb-2.5"><dt className="text-stone-500">{label}</dt><dd className="text-right font-medium text-stone-800">{value}</dd></div>)}</dl></section></div></div><div className="flex justify-end border-t border-stone-200 px-5 py-4 md:px-8"><button type="button" onClick={onClose} className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] hover:bg-stone-800">Tutup</button></div></ModalShell>;
 }
 
 function BooksManagement({ books, onAddBook, onExport, onBookSelect }) {
@@ -649,7 +673,10 @@ export default function Dashboard() {
   const role = Number(user?.id_role) || 3;
   const [activeView, setActiveView] = useState('overview');
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [books, setBooks] = useState(() => MOCK_BOOKS.map(normalizeBook).filter(Boolean));
+  const [books, setBooks] = useState(() => {
+    const savedBooks = readBookData();
+    return savedBooks.length ? savedBooks : MOCK_BOOKS.map(normalizeBook).filter(Boolean);
+  });
   const [users, setUsers] = useState(() => readRegisteredUsers(user));
   const [loans, setLoans] = useState(() => readLoanData());
   const [facilities, setFacilities] = useState(MOCK_FACILITIES);
@@ -670,6 +697,10 @@ export default function Dashboard() {
   }, [attendanceRecords]);
 
   useEffect(() => {
+    if (books.length) writeBookData(books);
+  }, [books]);
+
+  useEffect(() => {
     if (!apiNotice) return undefined;
     const timer = window.setTimeout(() => {
       setApiNotice('');
@@ -686,8 +717,9 @@ export default function Dashboard() {
       if (!Array.isArray(result)) throw new Error('Format data tidak sesuai');
       setBooks(result.length ? result.map(normalizeBook).filter(Boolean) : MOCK_BOOKS.map(normalizeBook).filter(Boolean));
     } catch {
-      setBooks(MOCK_BOOKS.map(normalizeBook).filter(Boolean));
-      setApiNotice('Menampilkan data demo karena server katalog belum terhubung.');
+      const savedBooks = readBookData();
+      setBooks(savedBooks.length ? savedBooks : MOCK_BOOKS.map(normalizeBook).filter(Boolean));
+      setApiNotice(savedBooks.length ? 'Menampilkan katalog buku yang tersimpan di perangkat.' : 'Menampilkan data demo karena server katalog belum terhubung.');
     } finally {
       setLoadingBooks(false);
     }
@@ -751,7 +783,7 @@ export default function Dashboard() {
     const title = form.judul.trim();
     const coverUrl = form.coverUrl.trim();
     const description = form.description.trim();
-    const book = normalizeBook({ id_buku: Date.now(), judul: title, penulis: form.penulis.trim(), penerbit: form.penerbit.trim(), genre: form.genre.trim(), isbn: form.isbn.trim(), tanggal_terbit: form.tanggalTerbit.trim(), tanggalTerbit: form.tanggalTerbit.trim(), description, deskripsi: description, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(title), coverUrl, cover_url: coverUrl });
+    const book = normalizeBook({ id_buku: Date.now(), judul: title, penulis: form.penulis.trim(), penerbit: form.penerbit.trim(), genre: form.genre.trim(), isbn: form.isbn.trim(), tanggal_terbit: form.tanggalTerbit.trim(), tanggalTerbit: form.tanggalTerbit.trim(), jumlah_halaman: form.jumlah_halaman.trim(), halaman: form.jumlah_halaman.trim(), bahasa: form.bahasa, description, deskripsi: description, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(title), coverUrl, cover_url: coverUrl });
     setBooks((current) => [...current, book]);
     setApiNotice('Buku baru ditambahkan ke daftar lokal.');
     closeModal();
@@ -759,7 +791,7 @@ export default function Dashboard() {
   const handleEditBook = (form) => {
     const coverUrl = form.coverUrl.trim();
     const description = form.description.trim();
-    setBooks((current) => current.map((book) => book.id_buku === detailBook?.id_buku ? normalizeBook({ ...book, ...form, isbn: form.isbn.trim(), tanggal_terbit: form.tanggalTerbit.trim(), tanggalTerbit: form.tanggalTerbit.trim(), description, deskripsi: description, coverUrl, cover_url: coverUrl, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(form.judul.trim()) }) : book));
+    setBooks((current) => current.map((book) => book.id_buku === detailBook?.id_buku ? normalizeBook({ ...book, ...form, isbn: form.isbn.trim(), tanggal_terbit: form.tanggalTerbit.trim(), tanggalTerbit: form.tanggalTerbit.trim(), jumlah_halaman: form.jumlah_halaman.trim(), halaman: form.jumlah_halaman.trim(), bahasa: form.bahasa, description, deskripsi: description, coverUrl, cover_url: coverUrl, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(form.judul.trim()) }) : book));
     setApiNotice('Data buku berhasil diperbarui.');
     closeModal();
   };
