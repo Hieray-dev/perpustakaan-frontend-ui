@@ -48,7 +48,8 @@ const STAFF_STORAGE_KEY = 'karyawan_data';
 const USERS_STORAGE_KEY = 'registered_users';
 const USERS_DATA_STORAGE_KEY = 'users_data';
 const LOANS_STORAGE_KEY = 'transaksi_peminjaman';
-const BOOKS_STORAGE_KEY = 'books_data';
+const BOOKS_STORAGE_KEY = 'books';
+const LEGACY_BOOKS_STORAGE_KEY = 'books_data';
 const ATTENDANCE_STORAGE_KEY = 'absensi_logs';
 const LEGACY_ATTENDANCE_STORAGE_KEY = 'absensi_data';
 const LAST_ATTENDANCE_DATE_STORAGE_KEY = 'last_absensi_date';
@@ -203,12 +204,14 @@ function normalizeAttendanceRecords(values) {
 
 function readBookData() {
   const savedBooks = parseLocalArray(BOOKS_STORAGE_KEY);
-  const legacyBooks = savedBooks.length ? savedBooks : parseLocalArray('books');
+  const legacyBooks = savedBooks.length ? savedBooks : parseLocalArray(LEGACY_BOOKS_STORAGE_KEY);
   return legacyBooks.map(normalizeBook).filter(Boolean);
 }
 
 function writeBookData(books) {
-  window.localStorage.setItem(BOOKS_STORAGE_KEY, JSON.stringify(books));
+  const serializedBooks = JSON.stringify(books);
+  window.localStorage.setItem(BOOKS_STORAGE_KEY, serializedBooks);
+  window.localStorage.setItem(LEGACY_BOOKS_STORAGE_KEY, serializedBooks);
 }
 
 function readAttendanceData() {
@@ -692,6 +695,7 @@ export default function Dashboard() {
   const [loadingBooks, setLoadingBooks] = useState(false);
   const [apiNotice, setApiNotice] = useState('');
   const [selectedBook, setSelectedBook] = useState(null);
+  const selectedBookFromState = useMemo(() => selectedBook ? books.find((book) => book.id_buku === selectedBook.id_buku) || selectedBook : null, [books, selectedBook]);
   const [transactionBook, setTransactionBook] = useState(null);
   const [detailBook, setDetailBook] = useState(null);
   const [shiftMember, setShiftMember] = useState(null);
@@ -715,8 +719,12 @@ export default function Dashboard() {
   }, [apiNotice]);
 
   const loadBooks = useCallback(async () => {
+    const savedBooks = readBookData();
+    if (savedBooks.length) {
+      setBooks(savedBooks);
+      return;
+    }
     setLoadingBooks(true);
-    setApiNotice('');
     try {
       const response = await api.get('/buku');
       const result = Array.isArray(response.data) ? response.data : response.data?.data;
@@ -795,14 +803,20 @@ export default function Dashboard() {
     const coverUrl = form.coverUrl.trim();
     const description = form.description.trim();
     const book = normalizeBook({ id_buku: Date.now(), judul: title, penulis: form.penulis.trim(), penerbit: form.penerbit.trim(), genre: form.genre.trim(), isbn: form.isbn.trim(), tanggal_terbit: form.tanggalTerbit.trim(), tanggalTerbit: form.tanggalTerbit.trim(), jumlah_halaman: form.jumlah_halaman.trim(), halaman: form.jumlah_halaman.trim(), bahasa: form.bahasa, description, deskripsi: description, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(title), coverUrl, cover_url: coverUrl });
-    setBooks((current) => [...current, book]);
+    const updatedBooks = [...books, book];
+    setBooks(updatedBooks);
+    writeBookData(updatedBooks);
     setApiNotice('Buku baru ditambahkan ke daftar lokal.');
     closeModal();
   };
   const handleEditBook = (form) => {
     const coverUrl = form.coverUrl.trim();
     const description = form.description.trim();
-    setBooks((current) => current.map((book) => book.id_buku === detailBook?.id_buku ? normalizeBook({ ...book, ...form, isbn: form.isbn.trim(), tanggal_terbit: form.tanggalTerbit.trim(), tanggalTerbit: form.tanggalTerbit.trim(), jumlah_halaman: form.jumlah_halaman.trim(), halaman: form.jumlah_halaman.trim(), bahasa: form.bahasa, description, deskripsi: description, coverUrl, cover_url: coverUrl, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(form.judul.trim()) }) : book));
+    const editedBook = normalizeBook({ ...detailBook, ...form, isbn: form.isbn.trim(), tanggal_terbit: form.tanggalTerbit.trim(), tanggalTerbit: form.tanggalTerbit.trim(), jumlah_halaman: form.jumlah_halaman.trim(), halaman: form.jumlah_halaman.trim(), bahasa: form.bahasa, description, deskripsi: description, coverUrl, cover_url: coverUrl, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(form.judul.trim()) });
+    const updatedBooks = books.map((book) => book.id_buku === editedBook.id_buku ? editedBook : book);
+    setBooks(updatedBooks);
+    writeBookData(updatedBooks);
+    setSelectedBook(editedBook);
     setApiNotice('Data buku berhasil diperbarui.');
     closeModal();
   };
@@ -851,6 +865,6 @@ export default function Dashboard() {
     setFacilities((current) => current.map((facility) => facility.id === id ? { ...facility, good, maintenance, broken } : facility));
     setApiNotice('Jumlah kondisi fasilitas berhasil diperbarui.');
   };
-  return <div className="flex min-h-svh bg-[#FAF7F2] font-sans text-stone-900"><Sidebar activeView={activeView} onViewChange={setActiveView} role={role} user={user} onLogout={handleLogout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} /><div className="min-w-0 flex-1"><MobileHeader onOpenMenu={() => setMobileOpen(true)} onLogout={handleLogout} user={user} /><main className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10"><div className="mb-6 hidden items-center justify-between lg:flex"><p className="text-xs text-stone-500">{currentDate}</p><div className="flex items-center gap-3"><button type="button" aria-label="Muat ulang katalog" onClick={loadBooks} className="rounded-md p-2 text-stone-500 hover:bg-white hover:text-stone-900"><RefreshCw aria-hidden="true" className={`size-4 ${loadingBooks ? 'animate-spin' : ''}`} /></button><div className="flex items-center gap-2 border-l border-stone-200 pl-4"><span className="flex size-8 items-center justify-center rounded-full bg-stone-900 text-xs font-medium text-[#FAF7F2]">{getInitials(getDisplayName(user))}</span><span className="text-sm text-stone-700">{getDisplayName(user)}</span></div></div></div>{apiNotice && <div className="mb-5 flex items-center gap-3 rounded-md border border-[#ead9b8] bg-[#faf4e7] px-4 py-3 text-xs text-[#85672c]" role="status" aria-live="polite"><CircleAlert aria-hidden="true" className="size-4 shrink-0" /><span className="flex-1">{apiNotice}</span><button type="button" aria-label="Tutup notifikasi" onClick={() => setApiNotice('')} className="rounded p-1 text-[#85672c]/70 transition hover:bg-[#f3e6cc] hover:text-[#85672c]"><X aria-hidden="true" className="size-4" /></button></div>}{activeView === 'overview' && <Overview user={user} role={role} onViewChange={setActiveView} loans={loans} users={users} />}{activeView === 'catalog' && <Catalog books={books} onBookSelect={(book) => setSelectedBook(book)} />}{activeView === 'my-loans' && <><PageHeader eyebrow="Aktivitas pengguna" title="Peminjaman saya" description="Daftar buku yang sedang dipinjam dan riwayat transaksi." /><RecentLoans loans={loans} memberOnly /></>}{activeView === 'books' && <BooksManagement books={books} onAddBook={() => openModal('add-book')} onExport={exportBooks} onBookSelect={(book) => setSelectedBook(book)} />}{activeView === 'loans' && <LoansManagement loans={loans} books={books} onNewTransaction={() => openModal('transaction')} />}{activeView === 'facilities' && <FacilitiesManagement facilities={facilities} onEdit={handleFacilityEdit} />}{activeView === 'staff' && role === 1 && <StaffManagement staff={karyawan} currentUser={user} onEditShift={handleEditShift} onAddStaff={() => openModal('add-staff')} />}{activeView === 'attendance' && role === 1 && <AttendanceReport attendanceRecords={todayAttendanceRecords} />}{selectedBook && !isModalOpen && <BookDetailModal book={selectedBook} onClose={() => setSelectedBook(null)} onBorrow={(book) => { setSelectedBook(null); setTransactionBook(book); openModal('transaction'); }} onEdit={(book) => { setSelectedBook(null); setDetailBook(book); openModal('edit-book'); }} />}{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'edit-book' && detailBook && <AddBookModal key={detailBook.id_buku} book={detailBook} onClose={closeModal} onSave={handleEditBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal key={transactionBook?.id_buku || 'new'} books={books} users={users} initialBook={transactionBook} onClose={closeModal} onSave={handleNewTransaction} />}{isModalOpen && modalType === 'add-staff' && <StaffModal shiftOptions={listShift} onClose={closeModal} onSave={handleAddStaff} />}{isModalOpen && modalType === 'edit-shift' && shiftMember && <ShiftModal member={shiftMember} shiftOptions={listShift} onShiftOptionsChange={handleShiftOptionsChange} onClose={closeModal} onSave={handleSaveShift} />}</main></div></div>;
+  return <div className="flex min-h-svh bg-[#FAF7F2] font-sans text-stone-900"><Sidebar activeView={activeView} onViewChange={setActiveView} role={role} user={user} onLogout={handleLogout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} /><div className="min-w-0 flex-1"><MobileHeader onOpenMenu={() => setMobileOpen(true)} onLogout={handleLogout} user={user} /><main className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10"><div className="mb-6 hidden items-center justify-between lg:flex"><p className="text-xs text-stone-500">{currentDate}</p><div className="flex items-center gap-3"><button type="button" aria-label="Muat ulang katalog" onClick={loadBooks} className="rounded-md p-2 text-stone-500 hover:bg-white hover:text-stone-900"><RefreshCw aria-hidden="true" className={`size-4 ${loadingBooks ? 'animate-spin' : ''}`} /></button><div className="flex items-center gap-2 border-l border-stone-200 pl-4"><span className="flex size-8 items-center justify-center rounded-full bg-stone-900 text-xs font-medium text-[#FAF7F2]">{getInitials(getDisplayName(user))}</span><span className="text-sm text-stone-700">{getDisplayName(user)}</span></div></div></div>{apiNotice && <div className="mb-5 flex items-center gap-3 rounded-md border border-[#ead9b8] bg-[#faf4e7] px-4 py-3 text-xs text-[#85672c]" role="status" aria-live="polite"><CircleAlert aria-hidden="true" className="size-4 shrink-0" /><span className="flex-1">{apiNotice}</span><button type="button" aria-label="Tutup notifikasi" onClick={() => setApiNotice('')} className="rounded p-1 text-[#85672c]/70 transition hover:bg-[#f3e6cc] hover:text-[#85672c]"><X aria-hidden="true" className="size-4" /></button></div>}{activeView === 'overview' && <Overview user={user} role={role} onViewChange={setActiveView} loans={loans} users={users} />}{activeView === 'catalog' && <Catalog books={books} onBookSelect={(book) => setSelectedBook(book)} />}{activeView === 'my-loans' && <><PageHeader eyebrow="Aktivitas pengguna" title="Peminjaman saya" description="Daftar buku yang sedang dipinjam dan riwayat transaksi." /><RecentLoans loans={loans} memberOnly /></>}{activeView === 'books' && <BooksManagement books={books} onAddBook={() => openModal('add-book')} onExport={exportBooks} onBookSelect={(book) => setSelectedBook(book)} />}{activeView === 'loans' && <LoansManagement loans={loans} books={books} onNewTransaction={() => openModal('transaction')} />}{activeView === 'facilities' && <FacilitiesManagement facilities={facilities} onEdit={handleFacilityEdit} />}{activeView === 'staff' && role === 1 && <StaffManagement staff={karyawan} currentUser={user} onEditShift={handleEditShift} onAddStaff={() => openModal('add-staff')} />}{activeView === 'attendance' && role === 1 && <AttendanceReport attendanceRecords={todayAttendanceRecords} />}{selectedBook && !isModalOpen && <BookDetailModal book={selectedBookFromState} onClose={() => setSelectedBook(null)} onBorrow={(book) => { setSelectedBook(null); setTransactionBook(book); openModal('transaction'); }} onEdit={(book) => { setSelectedBook(null); setDetailBook(book); openModal('edit-book'); }} />}{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'edit-book' && detailBook && <AddBookModal key={detailBook.id_buku} book={detailBook} onClose={closeModal} onSave={handleEditBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal key={transactionBook?.id_buku || 'new'} books={books} users={users} initialBook={transactionBook} onClose={closeModal} onSave={handleNewTransaction} />}{isModalOpen && modalType === 'add-staff' && <StaffModal shiftOptions={listShift} onClose={closeModal} onSave={handleAddStaff} />}{isModalOpen && modalType === 'edit-shift' && shiftMember && <ShiftModal member={shiftMember} shiftOptions={listShift} onShiftOptionsChange={handleShiftOptionsChange} onClose={closeModal} onSave={handleSaveShift} />}</main></div></div>;
 }
 
