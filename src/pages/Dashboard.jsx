@@ -21,6 +21,7 @@ import {
   Search,
   Settings2,
   ShieldCheck,
+  Trash2,
   Users,
   X,
 } from 'lucide-react';
@@ -50,11 +51,8 @@ const ATTENDANCE_STORAGE_KEY = 'absensi_logs';
 const LEGACY_ATTENDANCE_STORAGE_KEY = 'absensi_data';
 const EXCLUDED_DUMMY_NAMES = new Set(['sinta maharani', 'dimas pratama', 'sinta', 'dimas']);
 const DUMMY_LOAN_MEMBERS = new Set(['alya prameswari', 'raka mahendra', 'alya', 'raka']);
-const SHIFT_OPTIONS = [
-  { value: 'Shift Pagi (08.00 - 16.00)', label: 'Shift Pagi (08.00 - 16.00)' },
-  { value: 'Shift Siang (12.00 - 20.00)', label: 'Shift Siang (12.00 - 20.00)' },
-  { value: 'Shift Malam (20.00 - 04.00)', label: 'Shift Malam (20.00 - 04.00)' },
-];
+const SHIFT_STORAGE_KEY = 'shift_options';
+const DEFAULT_SHIFT_OPTIONS = [{ value: 'Shift Pagi (08.00 - 16.00)', label: 'Shift Pagi (08.00 - 16.00)' }];
 
 function formatRupiah(value) {
   return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(value);
@@ -78,6 +76,16 @@ function parseLocalArray(key) {
   } catch {
     return [];
   }
+}
+
+function readShiftOptions() {
+  const saved = parseLocalArray(SHIFT_STORAGE_KEY).filter((option) => option && option.value && option.label);
+  return saved.length ? saved : DEFAULT_SHIFT_OPTIONS;
+}
+
+function writeShiftOptions(options) {
+  window.localStorage.setItem(SHIFT_STORAGE_KEY, JSON.stringify(options));
+  window.dispatchEvent(new CustomEvent('shift_options_updated', { detail: options }));
 }
 
 function isExcludedDummy(value) {
@@ -467,8 +475,8 @@ function AddBookModal({ onClose, onSave, book = null }) {
   const inputClass = 'h-11 w-full rounded-lg border border-[#E5E0D8] bg-[#FAF7F2] px-3.5 text-sm text-stone-900 shadow-sm outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200';
   return <ModalShell eyebrow="Koleksi" title={book ? 'Edit data buku' : 'Tambah buku'} onClose={onClose}><form onSubmit={submit}><div className="grid gap-5 p-5 sm:grid-cols-2 sm:p-8"><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">Judul Buku</span><input required type="text" name="judul" value={form.judul} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Penulis</span><input required type="text" name="penulis" value={form.penulis} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Stok</span><input required min="0" type="number" name="stok" value={form.stok} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Penerbit</span>{customPublisher ? <div className="flex gap-2"><input required autoFocus name="penerbit" value={form.penerbit} onChange={update} placeholder="Tulis penerbit baru" className={inputClass} /><button type="button" onClick={() => { addOption('penerbit', form.penerbit); setCustomPublisher(false); }} className="shrink-0 rounded-lg border border-[#E5E0D8] bg-transparent px-3 text-xs text-stone-600 transition hover:bg-white">Pilih list</button></div> : <CustomDropdown value={form.penerbit} options={[{ value: '', label: 'Pilih penerbit' }, ...publishers, { value: '__new__', label: '+ Tambah Penerbit Baru' }]} onChange={(value) => chooseOption('penerbit', value)} ariaLabel="Pilih penerbit" />}</label><label><span className="mb-2 block text-xs font-medium text-stone-700">Genre</span>{customGenre ? <div className="flex gap-2"><input required autoFocus name="genre" value={form.genre} onChange={update} placeholder="Tulis genre baru" className={inputClass} /><button type="button" onClick={() => { addOption('genre', form.genre); setCustomGenre(false); }} className="shrink-0 rounded-lg border border-[#E5E0D8] bg-transparent px-3 text-xs text-stone-600 transition hover:bg-white">Pilih list</button></div> : <CustomDropdown value={form.genre} options={[{ value: '', label: 'Pilih genre' }, ...genres, { value: '__new__', label: '+ Tambah Genre Baru' }]} onChange={(value) => chooseOption('genre', value)} ariaLabel="Pilih genre" />}</label><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">URL Cover</span><input type="url" name="coverUrl" value={form.coverUrl} onChange={update} placeholder="https://..." className={inputClass} /></label><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">Deskripsi Buku</span><textarea name="description" value={form.description} onChange={update} rows="4" className={`${inputClass} h-auto py-3`} /></label></div><div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#E5E0D8] bg-[#FAF7F2]/95 backdrop-blur px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-8"><button type="button" onClick={onClose} className="rounded-lg border border-[#E5E0D8] bg-transparent px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-white">Batal</button><button type="submit" className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">{book ? 'Simpan perubahan' : 'Simpan buku'}</button></div></form></ModalShell>;
 }
-function TransactionModal({ books, users, onClose, onSave }) {
-  const [form, setForm] = useState(() => ({ member: users[0]?.name || '', book: books.find((item) => item.stok > 0)?.judul || '', manualMember: '', manualBook: '', due: getAutomaticDueDate() }));
+function TransactionModal({ books, users, initialBook = null, onClose, onSave }) {
+  const [form, setForm] = useState(() => ({ member: users[0]?.name || '', book: initialBook?.judul || books.find((item) => item.stok > 0)?.judul || '', manualMember: '', manualBook: '', due: getAutomaticDueDate() }));
   const [manualMember, setManualMember] = useState(false);
   const [manualBook, setManualBook] = useState(false);
   const update = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
@@ -518,22 +526,41 @@ function FacilitiesManagement({ facilities, onEdit }) {
   return <><PageHeader eyebrow="Operasional" title="Fasilitas" description="Lihat kondisi setiap fasilitas tanpa membuka rincian unit yang rumit." /><div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-4">{facilities.map((facility) => { const total = facility.good + facility.maintenance + facility.broken; return <article key={facility.id} className="rounded-lg border border-stone-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><span className="flex size-10 items-center justify-center rounded-md bg-stone-100 text-stone-700"><Building2 aria-hidden="true" className="size-5" strokeWidth={1.5} /></span><button type="button" onClick={() => setSelectedFacility(facility)} className="rounded-md border border-stone-200 px-2.5 py-1.5 text-[11px] font-medium text-stone-600 hover:border-stone-400 hover:bg-stone-50">Edit Jumlah</button></div><h2 className="mt-5 font-serif text-xl text-stone-900">{facility.name}</h2><p className="mt-1 text-sm text-stone-500">Total: <strong className="text-stone-800">{total}</strong> unit</p><div className="mt-4 flex flex-col gap-2 border-t border-stone-100 pt-4"><FacilityPill label="Baik" value={facility.good} tone="success" /><FacilityPill label="Perlu Perawatan" value={facility.maintenance} tone="warning" /><FacilityPill label="Rusak" value={facility.broken} tone="danger" /></div></article>; })}</div>{selectedFacility && <FacilityEditModal facility={selectedFacility} onClose={() => setSelectedFacility(null)} onSave={(values) => { onEdit(values); setSelectedFacility(null); }} />}</>;
 }
 
-function StaffModal({ onClose, onSave }) {
+function StaffModal({ onClose, onSave, shiftOptions }) {
   const [form, setForm] = useState({ name: '', username: '', role: 'Pustakawan', shift: '' });
   const update = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
   const submit = (event) => { event.preventDefault(); onSave(form); };
   const inputClass = 'h-11 w-full rounded-lg border border-[#E5E0D8] bg-[#FAF7F2] px-3.5 text-sm text-stone-900 shadow-sm outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200';
-  return <ModalShell eyebrow="Administrasi" title="Tambah karyawan" onClose={onClose}><form onSubmit={submit}><div className="grid gap-5 p-5 sm:grid-cols-2 sm:p-8"><label><span className="mb-2 block text-xs font-medium text-stone-700">Nama Lengkap</span><input required name="name" value={form.name} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Username</span><input required name="username" value={form.username} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Role</span><CustomDropdown value={form.role} options={['Pustakawan', 'Admin']} onChange={(value) => setForm((current) => ({ ...current, role: value }))} ariaLabel="Pilih role" /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Jadwal Shift</span><CustomDropdown value={form.shift} options={[{ value: '', label: 'Pilih shift' }, ...SHIFT_OPTIONS]} onChange={(value) => setForm((current) => ({ ...current, shift: value }))} ariaLabel="Pilih shift" /></label></div><div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#E5E0D8] bg-[#FAF7F2]/95 backdrop-blur px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-8"><button type="button" onClick={onClose} className="rounded-lg border border-[#E5E0D8] bg-transparent px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-white">Batal</button><button type="submit" className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">Simpan karyawan</button></div></form></ModalShell>;
+  return <ModalShell eyebrow="Administrasi" title="Tambah karyawan" onClose={onClose}><form onSubmit={submit}><div className="grid gap-5 p-5 sm:grid-cols-2 sm:p-8"><label><span className="mb-2 block text-xs font-medium text-stone-700">Nama Lengkap</span><input required name="name" value={form.name} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Username</span><input required name="username" value={form.username} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Role</span><CustomDropdown value={form.role} options={['Pustakawan', 'Admin']} onChange={(value) => setForm((current) => ({ ...current, role: value }))} ariaLabel="Pilih role" /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Jadwal Shift</span><CustomDropdown value={form.shift} options={[{ value: '', label: 'Pilih shift' }, ...shiftOptions]} onChange={(value) => setForm((current) => ({ ...current, shift: value }))} ariaLabel="Pilih shift" /></label></div><div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#E5E0D8] bg-[#FAF7F2]/95 backdrop-blur px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-8"><button type="button" onClick={onClose} className="rounded-lg border border-[#E5E0D8] bg-transparent px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-white">Batal</button><button type="submit" className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">Simpan karyawan</button></div></form></ModalShell>;
 }
-function ShiftModal({ member, onClose, onSave }) {
-  const savedShift = SHIFT_OPTIONS.some((option) => option.value === member.shift) ? member.shift : '';
+function ShiftModal({ member, onClose, onSave, shiftOptions, onShiftOptionsChange }) {
+  const savedShift = shiftOptions.some((option) => option.value === member.shift) ? member.shift : '';
   const [shift, setShift] = useState(savedShift);
+  const [newShiftName, setNewShiftName] = useState('');
+  const [newShiftHours, setNewShiftHours] = useState('');
   const submit = (event) => { event.preventDefault(); if (shift) onSave(shift); };
-  return <ModalShell eyebrow="Administrasi" title="Edit shift" onClose={onClose}><form onSubmit={submit}><div className="flex flex-col gap-5 p-5 sm:p-8"><div className="rounded-xl border border-[#E5E0D8] bg-white p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">Karyawan</p><p className="mt-1 font-serif text-xl text-stone-900">{member.name}</p><p className="mt-1 text-xs text-stone-500">Jadwal ini menjadi acuan waktu masuk pada widget absensi.</p></div><label><span className="mb-2 block text-xs font-medium text-stone-700">Pilih jadwal shift</span><CustomDropdown value={shift} options={[{ value: '', label: 'Pilih shift' }, ...SHIFT_OPTIONS]} onChange={setShift} ariaLabel="Pilih shift" /></label></div><div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#E5E0D8] bg-[#FAF7F2]/95 backdrop-blur px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-8"><button type="button" onClick={onClose} className="rounded-lg border border-[#E5E0D8] bg-transparent px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-white">Batal</button><button type="submit" className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">Simpan shift</button></div></form></ModalShell>;
+  const addShift = () => {
+    const name = newShiftName.trim();
+    const hours = newShiftHours.trim();
+    if (!name || !hours) return;
+    const value = `${name} (${hours})`;
+    if (shiftOptions.some((option) => option.value.toLowerCase() === value.toLowerCase())) return;
+    const nextOptions = [...shiftOptions, { value, label: value }];
+    onShiftOptionsChange(nextOptions);
+    setShift(value);
+    setNewShiftName('');
+    setNewShiftHours('');
+  };
+  const removeShift = (value) => {
+    const nextOptions = shiftOptions.filter((option) => option.value !== value);
+    onShiftOptionsChange(nextOptions);
+    if (shift === value) setShift('');
+  };
+  const inputClass = 'h-11 w-full rounded-lg border border-[#E5E0D8] bg-[#FAF7F2] px-3.5 text-sm text-stone-900 shadow-sm outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200';
+  return <ModalShell eyebrow="Administrasi" title="Edit shift" onClose={onClose}><form onSubmit={submit}><div className="flex flex-col gap-5 p-5 sm:p-8"><div className="rounded-xl border border-[#E5E0D8] bg-white p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">Karyawan</p><p className="mt-1 font-serif text-xl text-stone-900">{member.name}</p><p className="mt-1 text-xs text-stone-500">Jadwal ini menjadi acuan waktu masuk pada widget absensi.</p></div><label><span className="mb-2 block text-xs font-medium text-stone-700">Pilih jadwal shift</span><CustomDropdown value={shift} options={[{ value: '', label: 'Pilih shift' }, ...shiftOptions]} onChange={setShift} ariaLabel="Pilih shift" /></label><div className="rounded-xl border border-[#E5E0D8] bg-white p-4"><p className="text-xs font-semibold text-stone-800">Daftar shift</p><div className="mt-3 flex flex-col gap-2">{shiftOptions.map((option) => <div key={option.value} className="flex items-center justify-between gap-3 rounded-lg border border-stone-100 bg-[#FAF7F2] px-3 py-2"><button type="button" onClick={() => setShift(option.value)} className="min-w-0 flex-1 truncate text-left text-xs text-stone-700 hover:text-stone-950">{option.label}</button><button type="button" aria-label={`Hapus ${option.label}`} onClick={() => removeShift(option.value)} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[#a25d5d] transition hover:bg-[#fcf0f0]"><Trash2 aria-hidden="true" className="size-3.5" /> Hapus</button></div>)}</div></div><div className="rounded-xl border border-dashed border-stone-300 p-4"><p className="text-xs font-semibold text-stone-800">+ Tambah Shift Baru</p><div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto]"><input value={newShiftName} onChange={(event) => setNewShiftName(event.target.value)} placeholder="Nama Shift" aria-label="Nama Shift" className={inputClass} /><input value={newShiftHours} onChange={(event) => setNewShiftHours(event.target.value)} placeholder="Jam, contoh 08.00 - 09.00" aria-label="Jam shift" className={inputClass} /><button type="button" onClick={addShift} className="rounded-lg bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">Tambah</button></div></div></div><div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#E5E0D8] bg-[#FAF7F2]/95 backdrop-blur px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-8"><button type="button" onClick={onClose} className="rounded-lg border border-[#E5E0D8] bg-transparent px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-white">Batal</button><button type="submit" className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">Simpan shift</button></div></form></ModalShell>;
 }
-function StaffManagement({ staff, onAddStaff, onEditShift }) {
-  const [selectedMember, setSelectedMember] = useState(null);
-  return <><PageHeader eyebrow="Administrasi" title="Karyawan & shift" description="Data pengguna internal, peran, dan jadwal shift." action={<button type="button" onClick={onAddStaff} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Tambah karyawan</button>} /><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Nama</th><th className="px-5 py-3 font-medium">Username</th><th className="px-5 py-3 font-medium">Peran</th><th className="px-5 py-3 font-medium">Jadwal shift</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{staff.length ? staff.map((member) => <tr key={member.id}><td className="px-6 py-4 font-medium text-stone-800">{member.name}</td><td className="px-5 py-4 text-stone-600">@{member.username}</td><td className="px-5 py-4 text-stone-600">{member.role}</td><td className="px-5 py-4"><button type="button" onClick={() => setSelectedMember(member)} className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${member.shift === 'Belum diatur' ? 'border-[#ead9b8] bg-[#faf4e7] text-[#977333] hover:border-[#c9a765] hover:bg-[#f7eedb]' : 'border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-400 hover:bg-white'}`}>{member.shift === 'Belum diatur' ? 'Atur Shift' : member.shift}</button></td><td className="px-5 py-4"><StatusBadge tone="success">{member.status}</StatusBadge></td></tr>) : <tr><td colSpan="5" className="px-6 py-12 text-center text-sm text-stone-500">Belum ada data karyawan/absensi</td></tr>}</tbody></table></div></section>{selectedMember && <ShiftModal member={selectedMember} onClose={() => setSelectedMember(null)} onSave={(shift) => { onEditShift(selectedMember, shift); setSelectedMember(null); }} />}</>;
+function StaffManagement({ staff, currentUser, onAddStaff, onEditShift }) {
+  return <><PageHeader eyebrow="Administrasi" title="Karyawan & shift" description="Data pengguna internal, peran, dan jadwal shift." action={<button type="button" onClick={onAddStaff} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Tambah karyawan</button>} /><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Nama</th><th className="px-5 py-3 font-medium">Username</th><th className="px-5 py-3 font-medium">Peran</th><th className="px-5 py-3 font-medium">Jadwal shift</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{staff.length ? staff.map((member) => <tr key={member.id}><td className="px-6 py-4 font-medium text-stone-800">{member.name}</td><td className="px-5 py-4 text-stone-600">@{member.username}</td><td className="px-5 py-4 text-stone-600">{member.role}</td><td className="px-5 py-4"><button type="button" onClick={() => onEditShift(member)} className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${member.shift === 'Belum diatur' ? 'border-[#ead9b8] bg-[#faf4e7] text-[#977333] hover:border-[#c9a765] hover:bg-[#f7eedb]' : 'border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-400 hover:bg-white'}`}>{member.shift === 'Belum diatur' ? 'Atur Shift' : member.shift}</button></td><td className="px-5 py-4"><StatusBadge tone={String(member.username || '').toLowerCase() === String(currentUser?.username || '').toLowerCase() ? 'success' : 'danger'}>{String(member.username || '').toLowerCase() === String(currentUser?.username || '').toLowerCase() ? 'Aktif' : 'Tidak Aktif'}</StatusBadge></td></tr>) : <tr><td colSpan="5" className="px-6 py-12 text-center text-sm text-stone-500">Belum ada data karyawan/absensi</td></tr>}</tbody></table></div></section></>;
 }
 
 function AttendanceReport({ attendanceRecords }) {
@@ -556,11 +583,14 @@ export default function Dashboard() {
   const [loans, setLoans] = useState(() => readLoanData());
   const [facilities, setFacilities] = useState(MOCK_FACILITIES);
   const [karyawan, setKaryawan] = useState(() => readStaffData(user));
+  const [listShift, setListShift] = useState(() => readShiftOptions());
   const [attendanceRecords, setAttendanceRecords] = useState(() => readAttendanceData());
   const [loadingBooks, setLoadingBooks] = useState(false);
   const [apiNotice, setApiNotice] = useState('');
   const [selectedBook, setSelectedBook] = useState(null);
+  const [transactionBook, setTransactionBook] = useState(null);
   const [detailBook, setDetailBook] = useState(null);
+  const [shiftMember, setShiftMember] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState(null);
 
@@ -595,19 +625,23 @@ export default function Dashboard() {
       setKaryawan(readStaffData(user));
       setUsers(readRegisteredUsers(user));
     };
+    const syncShiftOptions = (event) => setListShift(Array.isArray(event.detail) ? event.detail : readShiftOptions());
     const syncLoans = (event) => setLoans(Array.isArray(event.detail) ? event.detail.map(normalizeLoan).filter(Boolean) : readLoanData());
     const syncFromStorage = (event) => {
       if (!event.key || event.key === ATTENDANCE_STORAGE_KEY || event.key === LEGACY_ATTENDANCE_STORAGE_KEY) setAttendanceRecords(readAttendanceData());
       if (!event.key || event.key === STAFF_STORAGE_KEY || event.key === USERS_STORAGE_KEY || event.key === USERS_DATA_STORAGE_KEY) syncStaff();
       if (!event.key || event.key === LOANS_STORAGE_KEY) setLoans(readLoanData());
+      if (!event.key || event.key === SHIFT_STORAGE_KEY) setListShift(readShiftOptions());
     };
     window.addEventListener('absensi_data_updated', syncAttendance);
     window.addEventListener('karyawan_data_updated', syncStaff);
+    window.addEventListener('shift_options_updated', syncShiftOptions);
     window.addEventListener('transaksi_peminjaman_updated', syncLoans);
     window.addEventListener('storage', syncFromStorage);
     return () => {
       window.removeEventListener('absensi_data_updated', syncAttendance);
       window.removeEventListener('karyawan_data_updated', syncStaff);
+      window.removeEventListener('shift_options_updated', syncShiftOptions);
       window.removeEventListener('transaksi_peminjaman_updated', syncLoans);
       window.removeEventListener('storage', syncFromStorage);
     };
@@ -615,7 +649,7 @@ export default function Dashboard() {
 
   const handleLogout = () => { clearSession(); navigate('/login', { replace: true }); };
   const openModal = (type) => { setModalType(type); setIsModalOpen(true); };
-  const closeModal = () => { setIsModalOpen(false); setModalType(null); setDetailBook(null); };
+  const closeModal = () => { setIsModalOpen(false); setModalType(null); setSelectedBook(null); setTransactionBook(null); setDetailBook(null); setShiftMember(null); };
   const handleAddBook = (form) => {
     const title = form.judul.trim();
     const book = { id_buku: Date.now(), judul: title, penulis: form.penulis.trim(), penerbit: form.penerbit.trim(), genre: form.genre.trim(), description: form.description.trim(), stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(title), coverUrl: form.coverUrl.trim(), cover: 'from-[#74604e] via-[#a58b70] to-[#d3c1a7]' };
@@ -636,6 +670,23 @@ export default function Dashboard() {
     setApiNotice('Transaksi baru ditambahkan ke daftar lokal.');
     closeModal();
   };
+  const handleShiftOptionsChange = (nextOptions) => {
+    setListShift(nextOptions);
+    writeShiftOptions(nextOptions);
+  };
+  const handleEditShift = (member) => {
+    setShiftMember(member);
+    openModal('edit-shift');
+  };
+  const handleSaveShift = (shift) => {
+    if (!shiftMember) return;
+    const nextStaff = karyawan.map((member) => member.id === shiftMember.id ? { ...member, shift } : member);
+    setKaryawan(nextStaff);
+    setUsers((current) => current.map((member) => member.id === shiftMember.id ? { ...member, shift } : member));
+    saveStaffData(nextStaff);
+    setApiNotice('Jadwal shift berhasil diperbarui.');
+    closeModal();
+  };
   const handleAddStaff = (form) => {
     const newStaff = { id: Date.now(), ...form, name: form.name.trim(), username: form.username.trim(), shift: form.shift.trim(), status: 'Aktif' };
     const nextStaff = [...karyawan, newStaff];
@@ -650,6 +701,6 @@ export default function Dashboard() {
     setFacilities((current) => current.map((facility) => facility.id === id ? { ...facility, good, maintenance, broken } : facility));
     setApiNotice('Jumlah kondisi fasilitas berhasil diperbarui.');
   };
-  return <div className="flex min-h-svh bg-[#FAF7F2] font-sans text-stone-900"><Sidebar activeView={activeView} onViewChange={setActiveView} role={role} user={user} onLogout={handleLogout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} /><div className="min-w-0 flex-1"><MobileHeader onOpenMenu={() => setMobileOpen(true)} onLogout={handleLogout} user={user} /><main className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10"><div className="mb-6 hidden items-center justify-between lg:flex"><p className="text-xs text-stone-500">Senin, 21 September 2026</p><div className="flex items-center gap-3"><button type="button" aria-label="Muat ulang katalog" onClick={loadBooks} className="rounded-md p-2 text-stone-500 hover:bg-white hover:text-stone-900"><RefreshCw aria-hidden="true" className={`size-4 ${loadingBooks ? 'animate-spin' : ''}`} /></button><div className="flex items-center gap-2 border-l border-stone-200 pl-4"><span className="flex size-8 items-center justify-center rounded-full bg-stone-900 text-xs font-medium text-[#FAF7F2]">{getInitials(getDisplayName(user))}</span><span className="text-sm text-stone-700">{getDisplayName(user)}</span></div></div></div>{apiNotice && <div className="mb-5 flex items-center gap-2 rounded-md border border-[#ead9b8] bg-[#faf4e7] px-4 py-3 text-xs text-[#85672c]" role="status"><CircleAlert aria-hidden="true" className="size-4 shrink-0" />{apiNotice}</div>}{activeView === 'overview' && <Overview user={user} role={role} onViewChange={setActiveView} loans={loans} users={users} />}{activeView === 'catalog' && <Catalog books={books} onBookSelect={setSelectedBook} />}{activeView === 'my-loans' && <><PageHeader eyebrow="Aktivitas pengguna" title="Peminjaman saya" description="Daftar buku yang sedang dipinjam dan riwayat transaksi." /><RecentLoans loans={loans} memberOnly /></>}{activeView === 'books' && <BooksManagement books={books} onAddBook={() => openModal('add-book')} onExport={exportBooks} onBookSelect={setDetailBook} />}{activeView === 'loans' && <LoansManagement loans={loans} books={books} onNewTransaction={() => openModal('transaction')} />}{activeView === 'facilities' && <FacilitiesManagement facilities={facilities} onEdit={handleFacilityEdit} />}{activeView === 'staff' && role === 1 && <StaffManagement staff={karyawan} onAddStaff={() => openModal('add-staff')} onEditShift={(member, shift) => { const nextStaff = karyawan.map((item) => item.id === member.id ? { ...item, shift } : item); setKaryawan(nextStaff); saveUserShift(member, shift); setApiNotice(`Shift ${member.name} berhasil diperbarui.`); }} />}{activeView === 'attendance' && role === 1 && <AttendanceReport attendanceRecords={attendanceRecords} />}{selectedBook && <BookDetailModal book={selectedBook} onClose={() => setSelectedBook(null)} onBorrow={(book) => { handleNewTransaction({ member: getDisplayName(user), book: book.judul, due: '28 Sep 2026' }); setSelectedBook(null); }} onEdit={(book) => { setDetailBook(book); setSelectedBook(null); openModal('edit-book'); }} />}{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'edit-book' && <AddBookModal book={detailBook} onClose={closeModal} onSave={handleEditBook} />}</main>{detailBook && <BookDetailModal book={detailBook} onClose={() => setDetailBook(null)} />}{isModalOpen && modalType === 'add-staff' && <StaffModal onClose={closeModal} onSave={handleAddStaff} />}</div><BookingModal book={selectedBook} onClose={() => setSelectedBook(null)} onConfirm={undefined} />{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal books={books} users={users} onClose={closeModal} onSave={handleNewTransaction} />}</div>;
+  return <div className="flex min-h-svh bg-[#FAF7F2] font-sans text-stone-900"><Sidebar activeView={activeView} onViewChange={setActiveView} role={role} user={user} onLogout={handleLogout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} /><div className="min-w-0 flex-1"><MobileHeader onOpenMenu={() => setMobileOpen(true)} onLogout={handleLogout} user={user} /><main className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10"><div className="mb-6 hidden items-center justify-between lg:flex"><p className="text-xs text-stone-500">Senin, 21 September 2026</p><div className="flex items-center gap-3"><button type="button" aria-label="Muat ulang katalog" onClick={loadBooks} className="rounded-md p-2 text-stone-500 hover:bg-white hover:text-stone-900"><RefreshCw aria-hidden="true" className={`size-4 ${loadingBooks ? 'animate-spin' : ''}`} /></button><div className="flex items-center gap-2 border-l border-stone-200 pl-4"><span className="flex size-8 items-center justify-center rounded-full bg-stone-900 text-xs font-medium text-[#FAF7F2]">{getInitials(getDisplayName(user))}</span><span className="text-sm text-stone-700">{getDisplayName(user)}</span></div></div></div>{apiNotice && <div className="mb-5 flex items-center gap-2 rounded-md border border-[#ead9b8] bg-[#faf4e7] px-4 py-3 text-xs text-[#85672c]" role="status"><CircleAlert aria-hidden="true" className="size-4 shrink-0" />{apiNotice}</div>}{activeView === 'overview' && <Overview user={user} role={role} onViewChange={setActiveView} loans={loans} users={users} />}{activeView === 'catalog' && <Catalog books={books} onBookSelect={(book) => setSelectedBook(book)} />}{activeView === 'my-loans' && <><PageHeader eyebrow="Aktivitas pengguna" title="Peminjaman saya" description="Daftar buku yang sedang dipinjam dan riwayat transaksi." /><RecentLoans loans={loans} memberOnly /></>}{activeView === 'books' && <BooksManagement books={books} onAddBook={() => openModal('add-book')} onExport={exportBooks} onBookSelect={setDetailBook} />}{activeView === 'loans' && <LoansManagement loans={loans} books={books} onNewTransaction={() => openModal('transaction')} />}{activeView === 'facilities' && <FacilitiesManagement facilities={facilities} onEdit={handleFacilityEdit} />}{activeView === 'staff' && role === 1 && <StaffManagement staff={karyawan} currentUser={user} onEditShift={handleEditShift} onAddStaff={() => openModal('add-staff')} onEditShift={(member, shift) => { const nextStaff = karyawan.map((item) => item.id === member.id ? { ...item, shift } : item); setKaryawan(nextStaff); saveUserShift(member, shift); setApiNotice(`Shift ${member.name} berhasil diperbarui.`); }} />}{activeView === 'attendance' && role === 1 && <AttendanceReport attendanceRecords={attendanceRecords} />}{selectedBook && <BookDetailModal book={selectedBook} onClose={() => setSelectedBook(null)} onBorrow={(book) => { handleNewTransaction({ member: getDisplayName(user), book: book.judul, due: '28 Sep 2026' }); setSelectedBook(null); }} onEdit={(book) => { setDetailBook(book); setSelectedBook(null); openModal('edit-book'); }} />}{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'edit-book' && <AddBookModal book={detailBook} onClose={closeModal} onSave={handleEditBook} />}{selectedBook && !isModalOpen && <BookDetailModal book={selectedBook} onClose={() => setSelectedBook(null)} onBorrow={(book) => { setSelectedBook(null); setTransactionBook(book); openModal('transaction'); }} onEdit={(book) => { setSelectedBook(null); setDetailBook(book); openModal('edit-book'); }} />}{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'edit-book' && detailBook && <AddBookModal key={detailBook.id_buku} book={detailBook} onClose={closeModal} onSave={handleEditBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal key={transactionBook?.id_buku || 'new'} books={books} users={users} initialBook={transactionBook} onClose={closeModal} onSave={handleNewTransaction} />}{isModalOpen && modalType === 'add-staff' && <StaffModal shiftOptions={listShift} onClose={closeModal} onSave={handleAddStaff} />}{isModalOpen && modalType === 'edit-shift' && shiftMember && <ShiftModal member={shiftMember} shiftOptions={listShift} onShiftOptionsChange={handleShiftOptionsChange} onClose={closeModal} onSave={handleSaveShift} />}</main>{detailBook && <BookDetailModal book={detailBook} onClose={() => setDetailBook(null)} />}{isModalOpen && modalType === 'add-staff' && <StaffModal onClose={closeModal} onSave={handleAddStaff} />}</div><BookingModal book={selectedBook} onClose={() => setSelectedBook(null)} onConfirm={undefined} />{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal books={books} users={users} initialBook={transactionBook} onClose={closeModal} onSave={handleNewTransaction} />}</div>;
 }
 
