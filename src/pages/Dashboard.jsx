@@ -50,6 +50,7 @@ const USERS_DATA_STORAGE_KEY = 'users_data';
 const LOANS_STORAGE_KEY = 'transaksi_peminjaman';
 const ATTENDANCE_STORAGE_KEY = 'absensi_logs';
 const LEGACY_ATTENDANCE_STORAGE_KEY = 'absensi_data';
+const LAST_ATTENDANCE_DATE_STORAGE_KEY = 'last_absensi_date';
 const EXCLUDED_DUMMY_NAMES = new Set(['sinta maharani', 'dimas pratama', 'sinta', 'dimas']);
 const DUMMY_LOAN_MEMBERS = new Set(['alya prameswari', 'raka mahendra', 'alya', 'raka']);
 const SHIFT_STORAGE_KEY = 'shift_options';
@@ -120,6 +121,13 @@ function sortStaff(staff) {
   });
 }
 
+function getLocalDateKey(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function parseLocalArray(key) {
   try {
     const value = window.localStorage.getItem(key);
@@ -171,7 +179,7 @@ function normalizeAttendanceRecords(values) {
   values.forEach((entry, index) => {
     if (!entry || typeof entry !== 'object') return;
     const rawDate = entry.tanggal || entry.date || entry.waktu || entry.timestamp;
-    const date = String(rawDate || new Date().toISOString()).slice(0, 10);
+    const date = rawDate ? String(rawDate).slice(0, 10) : getLocalDateKey();
     const name = String(entry.nama || entry.name || entry.username || '').trim();
     if (!name || isExcludedDummy(name)) return;
     const key = `${name}-${date}`;
@@ -198,6 +206,11 @@ function readAttendanceData() {
 function writeAttendanceData(records) {
   window.localStorage.setItem(ATTENDANCE_STORAGE_KEY, JSON.stringify(records));
   window.dispatchEvent(new CustomEvent('absensi_data_updated', { detail: records }));
+}
+
+function resetAttendanceData() {
+  writeAttendanceData([]);
+  window.localStorage.setItem(LEGACY_ATTENDANCE_STORAGE_KEY, JSON.stringify([]));
 }
 
 function formatTransactionDate(date = new Date()) {
@@ -369,7 +382,7 @@ function getShiftStartMinutes(shift) {
 
 function AttendanceWidget({ user }) {
   const displayName = getDisplayName(user);
-  const currentRecord = readAttendanceData().find((record) => record.nama === displayName && record.tanggal === new Date().toISOString().slice(0, 10));
+  const currentRecord = readAttendanceData().find((record) => record.nama === displayName && record.tanggal === getLocalDateKey());
   const [shift, setShift] = useState(() => getUserShift(user));
   const [clock, setClock] = useState(new Date());
   const [attendanceState, setAttendanceState] = useState(() => currentRecord?.jamKeluar ? 'exited' : currentRecord?.status === 'Terlambat' ? 'late' : currentRecord ? 'present' : 'idle');
@@ -380,8 +393,12 @@ function AttendanceWidget({ user }) {
     const timer = window.setInterval(() => setClock(new Date()), 1000);
     const syncCurrentAttendance = (event) => {
       const records = Array.isArray(event.detail) ? event.detail : readAttendanceData();
-      const todayRecord = records.find((record) => record.nama === displayName && record.tanggal === new Date().toISOString().slice(0, 10));
-      if (!todayRecord) return;
+      const todayRecord = records.find((record) => record.nama === displayName && record.tanggal === getLocalDateKey());
+      if (!todayRecord) {
+        setEntryTime('');
+        setAttendanceState('idle');
+        return;
+      }
       setEntryTime(todayRecord.jamMasuk || '');
       setAttendanceState(todayRecord.jamKeluar ? 'exited' : todayRecord.status === 'Terlambat' ? 'late' : 'present');
     };
@@ -401,7 +418,7 @@ function AttendanceWidget({ user }) {
 
   const submitAttendance = async (type) => {
     const recordedAt = new Date();
-    const today = recordedAt.toISOString().slice(0, 10);
+    const today = getLocalDateKey(recordedAt);
     const time = recordedAt.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     const existingRecords = readAttendanceData();
     const currentRecord = existingRecords.find((record) => record.nama === displayName && record.tanggal === today);
@@ -647,6 +664,10 @@ export default function Dashboard() {
   const [shiftMember, setShiftMember] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalType, setModalType] = useState(null);
+  const todayAttendanceRecords = useMemo(() => {
+    const today = getLocalDateKey();
+    return attendanceRecords.filter((record) => record.tanggal === today);
+  }, [attendanceRecords]);
 
   const loadBooks = useCallback(async () => {
     setLoadingBooks(true);
@@ -674,7 +695,11 @@ export default function Dashboard() {
   }, [loadBooks, navigate]);
 
   useEffect(() => {
-    const syncAttendance = (event) => setAttendanceRecords(Array.isArray(event.detail) ? normalizeAttendanceRecords(event.detail) : readAttendanceData());
+    const syncAttendance = (event) => {
+      const today = getLocalDateKey();
+      const records = Array.isArray(event.detail) ? normalizeAttendanceRecords(event.detail) : readAttendanceData();
+      setAttendanceRecords(records.filter((record) => record.tanggal === today));
+    };
     const syncStaff = () => {
       setKaryawan(readStaffData(user));
       setUsers(readRegisteredUsers(user));
@@ -682,7 +707,10 @@ export default function Dashboard() {
     const syncShiftOptions = (event) => setListShift(Array.isArray(event.detail) ? event.detail : readShiftOptions());
     const syncLoans = (event) => setLoans(Array.isArray(event.detail) ? event.detail.map(normalizeLoan).filter(Boolean) : readLoanData());
     const syncFromStorage = (event) => {
-      if (!event.key || event.key === ATTENDANCE_STORAGE_KEY || event.key === LEGACY_ATTENDANCE_STORAGE_KEY) setAttendanceRecords(readAttendanceData());
+      if (!event.key || event.key === ATTENDANCE_STORAGE_KEY || event.key === LEGACY_ATTENDANCE_STORAGE_KEY) {
+        const today = getLocalDateKey();
+        setAttendanceRecords(readAttendanceData().filter((record) => record.tanggal === today));
+      }
       if (!event.key || event.key === STAFF_STORAGE_KEY || event.key === USERS_STORAGE_KEY || event.key === USERS_DATA_STORAGE_KEY) syncStaff();
       if (!event.key || event.key === LOANS_STORAGE_KEY) setLoans(readLoanData());
       if (!event.key || event.key === SHIFT_STORAGE_KEY) setListShift(readShiftOptions());
@@ -700,6 +728,13 @@ export default function Dashboard() {
       window.removeEventListener('storage', syncFromStorage);
     };
   }, [user]);
+
+  useEffect(() => {
+    const today = getLocalDateKey();
+    const lastAttendanceDate = window.localStorage.getItem(LAST_ATTENDANCE_DATE_STORAGE_KEY);
+    if (lastAttendanceDate !== today) resetAttendanceData();
+    window.localStorage.setItem(LAST_ATTENDANCE_DATE_STORAGE_KEY, today);
+  }, []);
 
   const handleLogout = () => { clearSession(); navigate('/login', { replace: true }); };
   const openModal = (type) => { setModalType(type); setIsModalOpen(true); };
@@ -765,6 +800,6 @@ export default function Dashboard() {
     setFacilities((current) => current.map((facility) => facility.id === id ? { ...facility, good, maintenance, broken } : facility));
     setApiNotice('Jumlah kondisi fasilitas berhasil diperbarui.');
   };
-  return <div className="flex min-h-svh bg-[#FAF7F2] font-sans text-stone-900"><Sidebar activeView={activeView} onViewChange={setActiveView} role={role} user={user} onLogout={handleLogout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} /><div className="min-w-0 flex-1"><MobileHeader onOpenMenu={() => setMobileOpen(true)} onLogout={handleLogout} user={user} /><main className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10"><div className="mb-6 hidden items-center justify-between lg:flex"><p className="text-xs text-stone-500">{currentDate}</p><div className="flex items-center gap-3"><button type="button" aria-label="Muat ulang katalog" onClick={loadBooks} className="rounded-md p-2 text-stone-500 hover:bg-white hover:text-stone-900"><RefreshCw aria-hidden="true" className={`size-4 ${loadingBooks ? 'animate-spin' : ''}`} /></button><div className="flex items-center gap-2 border-l border-stone-200 pl-4"><span className="flex size-8 items-center justify-center rounded-full bg-stone-900 text-xs font-medium text-[#FAF7F2]">{getInitials(getDisplayName(user))}</span><span className="text-sm text-stone-700">{getDisplayName(user)}</span></div></div></div>{apiNotice && <div className="mb-5 flex items-center gap-2 rounded-md border border-[#ead9b8] bg-[#faf4e7] px-4 py-3 text-xs text-[#85672c]" role="status"><CircleAlert aria-hidden="true" className="size-4 shrink-0" />{apiNotice}</div>}{activeView === 'overview' && <Overview user={user} role={role} onViewChange={setActiveView} loans={loans} users={users} />}{activeView === 'catalog' && <Catalog books={books} onBookSelect={(book) => setSelectedBook(book)} />}{activeView === 'my-loans' && <><PageHeader eyebrow="Aktivitas pengguna" title="Peminjaman saya" description="Daftar buku yang sedang dipinjam dan riwayat transaksi." /><RecentLoans loans={loans} memberOnly /></>}{activeView === 'books' && <BooksManagement books={books} onAddBook={() => openModal('add-book')} onExport={exportBooks} onBookSelect={(book) => setSelectedBook(book)} />}{activeView === 'loans' && <LoansManagement loans={loans} books={books} onNewTransaction={() => openModal('transaction')} />}{activeView === 'facilities' && <FacilitiesManagement facilities={facilities} onEdit={handleFacilityEdit} />}{activeView === 'staff' && role === 1 && <StaffManagement staff={karyawan} currentUser={user} onEditShift={handleEditShift} onAddStaff={() => openModal('add-staff')} />}{activeView === 'attendance' && role === 1 && <AttendanceReport attendanceRecords={attendanceRecords} />}{selectedBook && !isModalOpen && <BookDetailModal book={selectedBook} onClose={() => setSelectedBook(null)} onBorrow={(book) => { setSelectedBook(null); setTransactionBook(book); openModal('transaction'); }} onEdit={(book) => { setSelectedBook(null); setDetailBook(book); openModal('edit-book'); }} />}{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'edit-book' && detailBook && <AddBookModal key={detailBook.id_buku} book={detailBook} onClose={closeModal} onSave={handleEditBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal key={transactionBook?.id_buku || 'new'} books={books} users={users} initialBook={transactionBook} onClose={closeModal} onSave={handleNewTransaction} />}{isModalOpen && modalType === 'add-staff' && <StaffModal shiftOptions={listShift} onClose={closeModal} onSave={handleAddStaff} />}{isModalOpen && modalType === 'edit-shift' && shiftMember && <ShiftModal member={shiftMember} shiftOptions={listShift} onShiftOptionsChange={handleShiftOptionsChange} onClose={closeModal} onSave={handleSaveShift} />}</main></div></div>;
+  return <div className="flex min-h-svh bg-[#FAF7F2] font-sans text-stone-900"><Sidebar activeView={activeView} onViewChange={setActiveView} role={role} user={user} onLogout={handleLogout} mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} /><div className="min-w-0 flex-1"><MobileHeader onOpenMenu={() => setMobileOpen(true)} onLogout={handleLogout} user={user} /><main className="mx-auto max-w-[1480px] px-5 py-6 sm:px-8 sm:py-8 lg:px-10 lg:py-10"><div className="mb-6 hidden items-center justify-between lg:flex"><p className="text-xs text-stone-500">{currentDate}</p><div className="flex items-center gap-3"><button type="button" aria-label="Muat ulang katalog" onClick={loadBooks} className="rounded-md p-2 text-stone-500 hover:bg-white hover:text-stone-900"><RefreshCw aria-hidden="true" className={`size-4 ${loadingBooks ? 'animate-spin' : ''}`} /></button><div className="flex items-center gap-2 border-l border-stone-200 pl-4"><span className="flex size-8 items-center justify-center rounded-full bg-stone-900 text-xs font-medium text-[#FAF7F2]">{getInitials(getDisplayName(user))}</span><span className="text-sm text-stone-700">{getDisplayName(user)}</span></div></div></div>{apiNotice && <div className="mb-5 flex items-center gap-2 rounded-md border border-[#ead9b8] bg-[#faf4e7] px-4 py-3 text-xs text-[#85672c]" role="status"><CircleAlert aria-hidden="true" className="size-4 shrink-0" />{apiNotice}</div>}{activeView === 'overview' && <Overview user={user} role={role} onViewChange={setActiveView} loans={loans} users={users} />}{activeView === 'catalog' && <Catalog books={books} onBookSelect={(book) => setSelectedBook(book)} />}{activeView === 'my-loans' && <><PageHeader eyebrow="Aktivitas pengguna" title="Peminjaman saya" description="Daftar buku yang sedang dipinjam dan riwayat transaksi." /><RecentLoans loans={loans} memberOnly /></>}{activeView === 'books' && <BooksManagement books={books} onAddBook={() => openModal('add-book')} onExport={exportBooks} onBookSelect={(book) => setSelectedBook(book)} />}{activeView === 'loans' && <LoansManagement loans={loans} books={books} onNewTransaction={() => openModal('transaction')} />}{activeView === 'facilities' && <FacilitiesManagement facilities={facilities} onEdit={handleFacilityEdit} />}{activeView === 'staff' && role === 1 && <StaffManagement staff={karyawan} currentUser={user} onEditShift={handleEditShift} onAddStaff={() => openModal('add-staff')} />}{activeView === 'attendance' && role === 1 && <AttendanceReport attendanceRecords={todayAttendanceRecords} />}{selectedBook && !isModalOpen && <BookDetailModal book={selectedBook} onClose={() => setSelectedBook(null)} onBorrow={(book) => { setSelectedBook(null); setTransactionBook(book); openModal('transaction'); }} onEdit={(book) => { setSelectedBook(null); setDetailBook(book); openModal('edit-book'); }} />}{isModalOpen && modalType === 'add-book' && <AddBookModal onClose={closeModal} onSave={handleAddBook} />}{isModalOpen && modalType === 'edit-book' && detailBook && <AddBookModal key={detailBook.id_buku} book={detailBook} onClose={closeModal} onSave={handleEditBook} />}{isModalOpen && modalType === 'transaction' && <TransactionModal key={transactionBook?.id_buku || 'new'} books={books} users={users} initialBook={transactionBook} onClose={closeModal} onSave={handleNewTransaction} />}{isModalOpen && modalType === 'add-staff' && <StaffModal shiftOptions={listShift} onClose={closeModal} onSave={handleAddStaff} />}{isModalOpen && modalType === 'edit-shift' && shiftMember && <ShiftModal member={shiftMember} shiftOptions={listShift} onShiftOptionsChange={handleShiftOptionsChange} onClose={closeModal} onSave={handleSaveShift} />}</main></div></div>;
 }
 
