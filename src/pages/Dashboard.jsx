@@ -56,6 +56,10 @@ const LAST_ATTENDANCE_DATE_STORAGE_KEY = 'last_absensi_date';
 const EXCLUDED_DUMMY_NAMES = new Set(['sinta maharani', 'dimas pratama', 'sinta', 'dimas']);
 const DUMMY_LOAN_MEMBERS = new Set(['alya prameswari', 'raka mahendra', 'alya', 'raka']);
 const SHIFT_STORAGE_KEY = 'shift_options';
+const CUSTOM_GENRES_STORAGE_KEY = 'custom_genres';
+const CUSTOM_PUBLISHERS_STORAGE_KEY = 'custom_penerbit';
+const DEFAULT_GENRES = ['Novel', 'Drama', 'Self-Improvement', 'Fiksi Sejarah'];
+const DEFAULT_PUBLISHERS = ['Lentera Dipantara', 'Bentang Pustaka', 'Kompas', 'KPG'];
 const DEFAULT_SHIFT_OPTIONS = [{ value: 'Shift Pagi (08.00 - 16.00)', label: 'Shift Pagi (08.00 - 16.00)' }];
 
 function formatRupiah(value) {
@@ -139,6 +143,15 @@ function parseLocalArray(key) {
   } catch {
     return [];
   }
+}
+
+function readCustomOptions(key, defaults, currentValue = '') {
+  const saved = parseLocalArray(key).filter((option) => typeof option === 'string' && option.trim());
+  return [...new Set([...defaults, ...saved, currentValue].filter(Boolean))];
+}
+
+function writeCustomOptions(key, options) {
+  window.localStorage.setItem(key, JSON.stringify([...new Set(options.filter(Boolean))]));
 }
 
 function readShiftOptions() {
@@ -552,14 +565,27 @@ function ModalShell({ title, eyebrow, onClose, children, wide = false }) {
 }
 function AddBookModal({ onClose, onSave, book = null }) {
   const [form, setForm] = useState(() => book ? { judul: book.judul || '', penulis: book.penulis || '', penerbit: book.penerbit || '', genre: book.genre || '', stok: String(book.stok || 0), coverUrl: book.cover_url || book.coverUrl || '', isbn: book.isbn || book.ISBN || '', tanggalTerbit: book.tanggal_terbit || book.tanggalTerbit || '', jumlah_halaman: String(book.jumlah_halaman ?? book.halaman ?? ''), bahasa: book.bahasa || 'Indonesia', description: book.description || book.deskripsi || '' } : { judul: '', penulis: '', penerbit: '', genre: '', stok: '0', coverUrl: '', isbn: '', tanggalTerbit: '', jumlah_halaman: '', bahasa: 'Indonesia', description: '' });
-  const [publishers, setPublishers] = useState(['Lentera Dipantara', 'Bentang Pustaka', 'Kompas', 'KPG']);
-  const [genres, setGenres] = useState(['Novel', 'Drama', 'Self-Improvement', 'Fiksi Sejarah']);
+  const [publishers, setPublishers] = useState(() => readCustomOptions(CUSTOM_PUBLISHERS_STORAGE_KEY, DEFAULT_PUBLISHERS, book?.penerbit));
+  const [genres, setGenres] = useState(() => readCustomOptions(CUSTOM_GENRES_STORAGE_KEY, DEFAULT_GENRES, book?.genre));
   const [customPublisher, setCustomPublisher] = useState(false);
   const [customGenre, setCustomGenre] = useState(false);
   const update = (event) => setForm((current) => ({ ...current, [event.target.name]: event.target.value }));
   const chooseOption = (field, value) => { if (value === '__new__') { if (field === 'penerbit') setCustomPublisher(true); if (field === 'genre') setCustomGenre(true); setForm((current) => ({ ...current, [field]: '' })); return; } if (field === 'penerbit') setCustomPublisher(false); if (field === 'genre') setCustomGenre(false); setForm((current) => ({ ...current, [field]: value })); };
   const submit = (event) => { event.preventDefault(); onSave(form); };
-  const addOption = (field, value) => { const cleanValue = value.trim(); if (!cleanValue) return; if (field === 'penerbit') setPublishers((current) => [...new Set([...current, cleanValue])]); if (field === 'genre') setGenres((current) => [...new Set([...current, cleanValue])]); };
+  const addOption = (field, value) => {
+    const cleanValue = value.trim();
+    if (!cleanValue) return;
+    const storageKey = field === 'penerbit' ? CUSTOM_PUBLISHERS_STORAGE_KEY : CUSTOM_GENRES_STORAGE_KEY;
+    const defaults = field === 'penerbit' ? DEFAULT_PUBLISHERS : DEFAULT_GENRES;
+    const currentOptions = field === 'penerbit' ? publishers : genres;
+    const updatedOptions = [...new Set([...currentOptions, cleanValue])];
+    const setOptions = field === 'penerbit' ? setPublishers : setGenres;
+    setOptions(updatedOptions);
+    writeCustomOptions(storageKey, updatedOptions.filter((option) => !defaults.includes(option)));
+    setForm((current) => ({ ...current, [field]: cleanValue }));
+    if (field === 'penerbit') setCustomPublisher(false);
+    if (field === 'genre') setCustomGenre(false);
+  };
   const inputClass = 'h-11 w-full rounded-lg border border-[#E5E0D8] bg-[#FAF7F2] px-3.5 text-sm text-stone-900 shadow-sm outline-none transition placeholder:text-stone-400 focus:border-stone-400 focus:ring-2 focus:ring-stone-200';
   return <ModalShell eyebrow="Koleksi" title={book ? 'Edit data buku' : 'Tambah buku'} onClose={onClose}><form onSubmit={submit}><div className="grid gap-5 p-5 sm:grid-cols-2 sm:p-8"><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">Judul Buku</span><input required type="text" name="judul" value={form.judul} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Penulis</span><input required type="text" name="penulis" value={form.penulis} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Stok</span><input required min="0" type="number" name="stok" value={form.stok} onChange={update} className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Penerbit</span>{customPublisher ? <div className="flex gap-2"><input required autoFocus name="penerbit" value={form.penerbit} onChange={update} placeholder="Tulis penerbit baru" className={inputClass} /><button type="button" onClick={() => { addOption('penerbit', form.penerbit); setCustomPublisher(false); }} className="shrink-0 rounded-lg border border-[#E5E0D8] bg-transparent px-3 text-xs text-stone-600 transition hover:bg-white">Pilih list</button></div> : <CustomDropdown value={form.penerbit} options={[{ value: '', label: 'Pilih penerbit' }, ...publishers, { value: '__new__', label: '+ Tambah Penerbit Baru' }]} onChange={(value) => chooseOption('penerbit', value)} ariaLabel="Pilih penerbit" />}</label><label><span className="mb-2 block text-xs font-medium text-stone-700">Genre</span>{customGenre ? <div className="flex gap-2"><input required autoFocus name="genre" value={form.genre} onChange={update} placeholder="Tulis genre baru" className={inputClass} /><button type="button" onClick={() => { addOption('genre', form.genre); setCustomGenre(false); }} className="shrink-0 rounded-lg border border-[#E5E0D8] bg-transparent px-3 text-xs text-stone-600 transition hover:bg-white">Pilih list</button></div> : <CustomDropdown value={form.genre} options={[{ value: '', label: 'Pilih genre' }, ...genres, { value: '__new__', label: '+ Tambah Genre Baru' }]} onChange={(value) => chooseOption('genre', value)} ariaLabel="Pilih genre" />}</label><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">URL Cover</span><input type="url" name="coverUrl" value={form.coverUrl} onChange={update} placeholder="https://..." className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">ISBN</span><input type="text" name="isbn" value={form.isbn} onChange={update} placeholder="978..." className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Tanggal Terbit</span><input type="text" name="tanggalTerbit" value={form.tanggalTerbit} onChange={update} placeholder="Bulan dan tahun" className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Jumlah Halaman</span><input min="0" type="number" name="jumlah_halaman" value={form.jumlah_halaman} onChange={update} placeholder="Contoh: 250" className={inputClass} /></label><label><span className="mb-2 block text-xs font-medium text-stone-700">Bahasa</span><CustomDropdown value={form.bahasa} options={['Indonesia', 'Inggris']} onChange={(value) => setForm((current) => ({ ...current, bahasa: value }))} ariaLabel="Pilih bahasa buku" /></label><label className="sm:col-span-2"><span className="mb-2 block text-xs font-medium text-stone-700">Deskripsi Buku</span><textarea name="description" value={form.description} onChange={update} rows="4" className={`${inputClass} h-auto py-3`} /></label></div><div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#E5E0D8] bg-[#FAF7F2]/95 backdrop-blur px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-8"><button type="button" onClick={onClose} className="rounded-lg border border-[#E5E0D8] bg-transparent px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-white">Batal</button><button type="submit" className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">{book ? 'Simpan perubahan' : 'Simpan buku'}</button></div></form></ModalShell>;
 }
