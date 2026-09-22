@@ -27,7 +27,7 @@ import {
   X,
 } from 'lucide-react';
 import api from '../api/client';
-import { clearSession, getToken, getUser } from '../utils/auth';
+import { getToken, getUser } from '../utils/auth';
 
 const MOCK_BOOKS = [
   { id_buku: 1, judul: 'Bumi Manusia', penulis: 'Pramoedya Ananta Toer', penerbit: 'Lentera Dipantara', genre: 'Novel', stok: 5, status: 'Tersedia', initials: 'BM', description: 'Novel pembuka Tetralogi Buru tentang Minke, pendidikan, dan pergulatan manusia di tengah kolonialisme.', isbn: '9789799731234', tanggalTerbit: 'Agustus 1980', halaman: 535, bahasa: 'Indonesia', coverUrl: '/covers/bumi-manusia.png', cover: 'from-[#8b6c54] via-[#b49a7d] to-[#d9c7ae]' },
@@ -141,8 +141,10 @@ function parseLocalArray(key) {
 }
 
 function readShiftOptions() {
-  const saved = parseLocalArray(SHIFT_STORAGE_KEY).filter((option) => option && option.value && option.label);
-  return saved.length ? saved : DEFAULT_SHIFT_OPTIONS;
+  const saved = parseLocalArray(SHIFT_STORAGE_KEY);
+  const legacy = saved.length ? saved : parseLocalArray('shifts');
+  const options = legacy.filter((option) => option && option.value && option.label);
+  return options.length ? options : DEFAULT_SHIFT_OPTIONS;
 }
 
 function writeShiftOptions(options) {
@@ -200,7 +202,9 @@ function normalizeAttendanceRecords(values) {
 }
 
 function readBookData() {
-  return parseLocalArray(BOOKS_STORAGE_KEY).map(normalizeBook).filter(Boolean);
+  const savedBooks = parseLocalArray(BOOKS_STORAGE_KEY);
+  const legacyBooks = savedBooks.length ? savedBooks : parseLocalArray('books');
+  return legacyBooks.map(normalizeBook).filter(Boolean);
 }
 
 function writeBookData(books) {
@@ -246,7 +250,8 @@ function normalizeLoan(value, index = 0) {
 }
 
 function readLoanData() {
-  const persistedLoans = parseLocalArray(LOANS_STORAGE_KEY);
+  const savedLoans = parseLocalArray(LOANS_STORAGE_KEY);
+  const persistedLoans = savedLoans.length ? savedLoans : parseLocalArray('borrowings');
   const cleanedLoans = persistedLoans.map(normalizeLoan).filter(Boolean);
   if (JSON.stringify(persistedLoans) !== JSON.stringify(cleanedLoans)) {
     window.localStorage.setItem(LOANS_STORAGE_KEY, JSON.stringify(cleanedLoans));
@@ -267,7 +272,8 @@ function getUserShift(user) {
 }
 
 function readStaffData(activeUser) {
-  const savedStaff = parseLocalArray(STAFF_STORAGE_KEY).map(normalizeUser).filter(Boolean);
+  const persistedStaff = parseLocalArray(STAFF_STORAGE_KEY);
+  const savedStaff = (persistedStaff.length ? persistedStaff : parseLocalArray('karyawan')).map(normalizeUser).filter(Boolean);
   const registeredUsers = readRegisteredUsers(activeUser);
   const attendanceUsers = readAttendanceData().map((record, index) => normalizeUser({ name: record.nama, username: record.username }, `attendance-${index}`)).filter(Boolean);
   const staff = new Map([...savedStaff, ...registeredUsers].map((member) => [member.username || member.name, member]));
@@ -776,7 +782,12 @@ export default function Dashboard() {
     window.localStorage.setItem(LAST_ATTENDANCE_DATE_STORAGE_KEY, today);
   }, []);
 
-  const handleLogout = () => { clearSession(); navigate('/login', { replace: true }); };
+  const handleLogout = () => {
+    window.localStorage.removeItem('token');
+    window.localStorage.removeItem('user');
+    window.localStorage.removeItem('currentUser');
+    navigate('/login', { replace: true });
+  };
   const openModal = (type) => { setModalType(type); setIsModalOpen(true); };
   const closeModal = () => { setIsModalOpen(false); setModalType(null); setSelectedBook(null); setTransactionBook(null); setDetailBook(null); setShiftMember(null); };
   const handleAddBook = (form) => {
