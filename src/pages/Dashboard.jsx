@@ -16,6 +16,7 @@ import {
   Library,
   LogOut,
   Menu,
+  Pencil,
   Plus,
   RefreshCw,
   Search,
@@ -66,6 +67,44 @@ function getDisplayName(user) {
 
 function getInitials(name = 'Pengguna') {
   return name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+}
+
+function normalizeBook(value, index = 0) {
+  if (!value || typeof value !== 'object') return null;
+  const title = String(value.judul || value.title || '').trim();
+  if (!title) return null;
+  const stock = Number(value.stok ?? value.stock ?? 0);
+  const description = String(value.deskripsi || value.description || '').trim();
+  const coverUrl = String(value.cover_url || value.coverUrl || '').trim();
+  const publishedDate = String(value.tanggal_terbit || value.tanggalTerbit || '').trim();
+  return {
+    ...value,
+    id_buku: value.id_buku || value.id || `book-${index}`,
+    judul: title,
+    penulis: String(value.penulis || value.author || '').trim(),
+    penerbit: String(value.penerbit || value.publisher || '').trim(),
+    genre: String(value.genre || value.kategori || value.nama_genre || '').trim(),
+    stok: Number.isFinite(stock) ? stock : 0,
+    status: value.status || (stock > 0 ? 'Tersedia' : 'Dipinjam'),
+    description,
+    deskripsi: description,
+    isbn: String(value.isbn || value.ISBN || '').trim(),
+    tanggal_terbit: publishedDate,
+    tanggalTerbit: publishedDate,
+    bahasa: String(value.bahasa || value.language || '').trim(),
+    halaman: value.halaman || value.pages || '',
+    cover_url: coverUrl,
+    coverUrl,
+    initials: value.initials || getInitials(title),
+    cover: value.cover || 'from-stone-300 to-stone-600',
+  };
+}
+
+function sortStaff(staff) {
+  return [...staff].sort((left, right) => {
+    const idOrder = String(left.id ?? '').localeCompare(String(right.id ?? ''), 'id', { numeric: true, sensitivity: 'base' });
+    return idOrder || String(left.username || left.name || '').localeCompare(String(right.username || right.name || ''), 'id', { sensitivity: 'base' });
+  });
 }
 
 function parseLocalArray(key) {
@@ -208,13 +247,14 @@ function readStaffData(activeUser) {
     const key = member.username || member.name;
     if (!staff.has(key)) staff.set(key, member);
   });
-  return Array.from(staff.values());
+  return sortStaff(Array.from(staff.values()));
 }
 
 function saveStaffData(staff) {
-  window.localStorage.setItem(STAFF_STORAGE_KEY, JSON.stringify(staff));
-  window.localStorage.setItem(USERS_DATA_STORAGE_KEY, JSON.stringify(staff));
-  window.dispatchEvent(new CustomEvent('karyawan_data_updated', { detail: staff }));
+  const orderedStaff = sortStaff(staff);
+  window.localStorage.setItem(STAFF_STORAGE_KEY, JSON.stringify(orderedStaff));
+  window.localStorage.setItem(USERS_DATA_STORAGE_KEY, JSON.stringify(orderedStaff));
+  window.dispatchEvent(new CustomEvent('karyawan_data_updated', { detail: orderedStaff }));
 }
 
 function downloadCsv(filename, headers, rows) {
@@ -307,6 +347,14 @@ function PageHeader({ eyebrow, title, description, action }) {
 function StatCard({ label, value, detail, icon: Icon, accent = 'stone' }) {
   const iconStyles = { stone: 'bg-stone-100 text-stone-700', green: 'bg-[#edf5ee] text-[#4c7e5b]', amber: 'bg-[#faf4e7] text-[#977333]', rose: 'bg-[#fcf0f0] text-[#a25d5d]' };
   return <article className="rounded-lg border border-stone-200 bg-white p-5"><div className="flex items-start justify-between gap-3"><p className="text-xs text-stone-500">{label}</p><span className={`flex size-9 items-center justify-center rounded-md ${iconStyles[accent]}`}><Icon aria-hidden="true" className="size-[17px]" strokeWidth={1.5} /></span></div><p className="mt-5 font-serif text-[30px] leading-none tracking-[-0.03em] text-stone-900">{value}</p><p className="mt-2 text-xs text-stone-500">{detail}</p></article>;
+}
+
+function formatShiftLabel(shift) {
+  const value = String(shift || '').trim();
+  if (!value || value === 'Belum diatur') return 'Belum diatur';
+  const match = value.match(/^(?:Shift\s+)?(.+?)\s*\(\s*(\d{1,2}[.:]\d{2})\s*-\s*(\d{1,2}[.:]\d{2})\s*\)$/i);
+  if (!match) return value;
+  return `${match[1].trim()} · ${match[2]}–${match[3]}`;
 }
 
 function getShiftStartMinutes(shift) {
@@ -402,19 +450,21 @@ function Overview({ user, role, onViewChange, loans, users }) {
 }
 
 function BookCover({ book, large = false }) {
+  const coverUrl = book.cover_url || book.coverUrl;
   return <div className={`relative aspect-[3/4] w-full overflow-hidden bg-gradient-to-br ${book.cover || 'from-stone-300 to-stone-600'} ${large ? 'max-w-none' : ''}`}>
-    {book.coverUrl && <img src={book.coverUrl} alt={`Sampul ${book.judul}`} className="absolute inset-0 size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
+    {coverUrl && <img src={coverUrl} alt={`Sampul ${book.judul}`} className="absolute inset-0 size-full object-cover" onError={(event) => { event.currentTarget.style.display = 'none'; }} />}
     <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent_20%,rgba(255,255,255,.18),transparent_60%)]" />
-    {!book.coverUrl && <div className="absolute inset-x-5 bottom-5 border-l border-white/50 pl-3 text-white"><p className="font-serif text-3xl leading-none tracking-[-0.05em]">{book.initials || 'BK'}</p><p className="mt-2 max-w-[120px] text-[9px] uppercase tracking-[0.16em] text-white/75">Koleksi buku</p></div>}
+    {!coverUrl && <div className="absolute inset-x-5 bottom-5 border-l border-white/50 pl-3 text-white"><p className="font-serif text-3xl leading-none tracking-[-0.05em]">{book.initials || getInitials(book.judul)}</p><p className="mt-2 max-w-[120px] text-[9px] uppercase tracking-[0.16em] text-white/75">Koleksi buku</p></div>}
   </div>;
 }
 
-function BookGrid({ books, onBookSelect }) {
+function BookGrid({ books, onBookSelect, showFilters = true }) {
   const [search, setSearch] = useState('');
   const [genre, setGenre] = useState('Semua genre');
   const genres = useMemo(() => ['Semua genre', ...new Set(books.map((book) => book.genre).filter(Boolean))], [books]);
   const filteredBooks = books.filter((book) => (!search || `${book.judul} ${book.penulis}`.toLowerCase().includes(search.toLowerCase())) && (genre === 'Semua genre' || book.genre === genre));
-  return <div><div className="mb-6 flex flex-col gap-3 rounded-xl border border-[#E5E0D8] bg-white p-3 shadow-sm sm:flex-row"><label className="relative flex-1"><span className="sr-only">Cari judul atau penulis</span><Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-stone-400" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari judul atau penulis" className="h-11 w-full rounded-lg border border-[#E5E0D8] bg-[#FAF7F2] pl-10 pr-3 text-sm text-stone-900 outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200" /></label><div className="w-full sm:w-48"><CustomDropdown value={genre} options={genres} onChange={setGenre} ariaLabel="Filter genre" /></div></div><div className="mb-4 flex items-center justify-between"><p className="text-sm text-stone-500">Menampilkan <span className="font-medium text-stone-900">{filteredBooks.length}</span> buku</p><span className="text-xs text-stone-400">Koleksi pilihan</span></div>{filteredBooks.length ? <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{filteredBooks.map((book) => { const available = Number(book.stok) > 0 || book.status === 'Tersedia'; return <article key={book.id_buku} className="group overflow-hidden rounded-xl border border-stone-200 bg-white shadow-[0_8px_30px_rgba(74,59,45,0.04)] transition hover:-translate-y-1 hover:border-stone-300 hover:shadow-[0_16px_40px_rgba(74,59,45,0.1)]"><button type="button" onClick={() => onBookSelect(book)} className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-700 focus-visible:ring-inset"><BookCover book={book} /><div className="flex min-h-[154px] flex-col gap-2 p-3.5 sm:p-4"><div className="flex items-start justify-between gap-2"><h3 className="line-clamp-2 font-serif text-[17px] leading-tight text-stone-900">{book.judul}</h3><span className={`mt-0.5 size-2 shrink-0 rounded-full ${available ? 'bg-[#5f8b68]' : 'bg-stone-400'}`} aria-label={available ? 'Tersedia' : 'Dipinjam'} /></div><p className="line-clamp-1 text-xs text-stone-500">{book.penulis}</p><span className="w-fit rounded-full bg-[#f4eee6] px-2 py-1 text-[10px] font-medium text-[#876a4c]">{book.genre || 'Tanpa genre'}</span><div className="mt-auto flex items-center justify-between border-t border-stone-100 pt-2.5 text-[11px]"><span className={available ? 'text-[#4c7e5b]' : 'text-stone-500'}>{available ? 'Tersedia' : 'Dipinjam'}</span><span className="text-stone-400">{available ? `${book.stok || 0} stok` : 'Habis'}</span></div></div></button></article>; })}</div> : <div className="rounded-lg border border-dashed border-stone-300 bg-white py-20 text-center"><BookOpen aria-hidden="true" className="mx-auto size-8 text-stone-300" /><p className="mt-3 font-serif text-xl text-stone-700">Buku tidak ditemukan</p><p className="mt-1 text-sm text-stone-500">Coba ubah kata kunci atau filter pencarian.</p></div>}</div>;
+  const visibleBooks = showFilters ? filteredBooks : books;
+  return <div>{showFilters && <div className="mb-6 flex flex-col gap-3 rounded-xl border border-[#E5E0D8] bg-white p-3 shadow-sm sm:flex-row"><label className="relative flex-1"><span className="sr-only">Cari judul atau penulis</span><Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-stone-400" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari judul atau penulis" className="h-11 w-full rounded-lg border border-[#E5E0D8] bg-[#FAF7F2] pl-10 pr-3 text-sm text-stone-900 outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200" /></label><div className="w-full sm:w-48"><CustomDropdown value={genre} options={genres} onChange={setGenre} ariaLabel="Filter genre" /></div></div>}<div className="mb-4 flex items-center justify-between"><p className="text-sm text-stone-500">Menampilkan <span className="font-medium text-stone-900">{visibleBooks.length}</span> buku</p><span className="text-xs text-stone-400">Koleksi pilihan</span></div>{visibleBooks.length ? <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">{visibleBooks.map((book) => { const available = Number(book.stok) > 0 || book.status === 'Tersedia'; return <article key={book.id_buku} className="group overflow-hidden rounded-xl border border-stone-200 bg-white shadow-[0_8px_30px_rgba(74,59,45,0.04)] transition hover:-translate-y-1 hover:border-stone-300 hover:shadow-[0_16px_40px_rgba(74,59,45,0.1)]"><button type="button" onClick={() => onBookSelect(book)} className="block w-full text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-stone-700 focus-visible:ring-inset"><BookCover book={book} /><div className="flex min-h-[154px] flex-col gap-2 p-3.5 sm:p-4"><div className="flex items-start justify-between gap-2"><h3 className="line-clamp-2 font-serif text-[17px] leading-tight text-stone-900">{book.judul}</h3><span className={`mt-0.5 size-2 shrink-0 rounded-full ${available ? 'bg-[#5f8b68]' : 'bg-stone-400'}`} aria-label={available ? 'Tersedia' : 'Dipinjam'} /></div><p className="line-clamp-1 text-xs text-stone-500">{book.penulis}</p><span className="w-fit rounded-full bg-[#f4eee6] px-2 py-1 text-[10px] font-medium text-[#876a4c]">{book.genre || 'Tanpa genre'}</span><div className="mt-auto flex items-center justify-between border-t border-stone-100 pt-2.5 text-[11px]"><span className={available ? 'text-[#4c7e5b]' : 'text-stone-500'}>{available ? 'Tersedia' : 'Dipinjam'}</span><span className="text-stone-400">{available ? `${book.stok || 0} stok` : 'Habis'}</span></div></div></button></article>; })}</div> : <div className="rounded-lg border border-dashed border-stone-300 bg-white py-20 text-center"><BookOpen aria-hidden="true" className="mx-auto size-8 text-stone-300" /><p className="mt-3 font-serif text-xl text-stone-700">Buku tidak ditemukan</p><p className="mt-1 text-sm text-stone-500">Coba ubah kata kunci atau filter pencarian.</p></div>}</div>;
 }
 function Catalog({ books, onBookSelect }) {
   const [search, setSearch] = useState('');
@@ -423,7 +473,7 @@ function Catalog({ books, onBookSelect }) {
   const genres = useMemo(() => ['Semua genre', ...new Set(books.map((book) => book.genre).filter(Boolean))], [books]);
   const publishers = useMemo(() => ['Semua penerbit', ...new Set(books.map((book) => book.penerbit).filter(Boolean))], [books]);
   const filteredBooks = books.filter((book) => { const needle = search.toLowerCase(); return (!needle || `${book.judul} ${book.penulis} ${book.penerbit}`.toLowerCase().includes(needle)) && (genre === 'Semua genre' || book.genre === genre) && (publisher === 'Semua penerbit' || book.penerbit === publisher); });
-  return <><PageHeader eyebrow="Koleksi perpustakaan" title="Katalog buku" description="Cari buku berdasarkan judul, penulis, penerbit, atau genre." /><div className="mb-7 flex flex-col gap-3 rounded-xl border border-[#E5E0D8] bg-white p-3 shadow-sm sm:flex-row"><div className="relative flex-1"><Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-stone-400" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari judul, penulis, atau penerbit" className="h-11 w-full rounded-lg border border-[#E5E0D8] bg-[#FAF7F2] pl-10 pr-3 text-sm text-stone-900 outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200" /></div><div className="w-full sm:w-44"><CustomDropdown value={genre} options={genres} onChange={setGenre} ariaLabel="Filter genre" /></div><div className="w-full sm:w-48"><CustomDropdown value={publisher} options={publishers} onChange={setPublisher} ariaLabel="Filter penerbit" /></div></div><BookGrid books={filteredBooks} onBookSelect={onBookSelect} /></>;
+  return <><PageHeader eyebrow="Koleksi perpustakaan" title="Katalog buku" description="Cari buku berdasarkan judul, penulis, penerbit, atau genre." /><div className="mb-7 flex flex-col gap-3 rounded-xl border border-[#E5E0D8] bg-white p-3 shadow-sm sm:flex-row"><div className="relative flex-1"><Search aria-hidden="true" className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-stone-400" /><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Cari judul, penulis, atau penerbit" className="h-11 w-full rounded-lg border border-[#E5E0D8] bg-[#FAF7F2] pl-10 pr-3 text-sm text-stone-900 outline-none transition focus:border-stone-400 focus:ring-2 focus:ring-stone-200" /></div><div className="w-full sm:w-44"><CustomDropdown value={genre} options={genres} onChange={setGenre} ariaLabel="Filter genre" /></div><div className="w-full sm:w-48"><CustomDropdown value={publisher} options={publishers} onChange={setPublisher} ariaLabel="Filter penerbit" /></div></div><BookGrid books={filteredBooks} onBookSelect={onBookSelect} showFilters={false} /></>;
 }
 function CustomDropdown({ value, options, onChange, placeholder = 'Pilih opsi', ariaLabel, disabled = false }) {
   const [open, setOpen] = useState(false);
@@ -463,7 +513,7 @@ function BookingModal({ book, onClose, onConfirm }) {
   return <ModalShell eyebrow="Peminjaman" title={confirmed ? 'Peminjaman berhasil' : 'Konfirmasi peminjaman'} onClose={onClose}><div className="flex flex-col gap-5 p-5 sm:p-8"><div className="flex gap-4 rounded-xl border border-[#E5E0D8] bg-white p-4"><div className="w-16 shrink-0 overflow-hidden rounded-md"><BookCover book={book} /></div><div><h3 className="font-serif text-lg text-stone-900">{book.judul}</h3><p className="mt-1 text-sm text-stone-500">{book.penulis}</p><p className="mt-2 text-xs text-stone-500">Durasi peminjaman: 7 hari</p></div></div>{confirmed ? <div className="flex items-start gap-3 rounded-xl border border-[#c9dacd] bg-[#edf5ee] p-4 text-sm leading-6 text-[#3e7251]"><Check aria-hidden="true" className="mt-0.5 size-4 shrink-0" /><p>Transaksi peminjaman sudah ditambahkan. Batas pengembalian: {getAutomaticDueDate()}.</p></div> : <p className="text-sm leading-6 text-stone-500">Periksa data buku sebelum menyimpan transaksi.</p>}</div><div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#E5E0D8] bg-[#FAF7F2]/95 backdrop-blur px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-8">{confirmed ? <button type="button" onClick={onClose} className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">Tutup</button> : <><button type="button" onClick={onClose} className="rounded-lg border border-[#E5E0D8] bg-transparent px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-white">Batal</button><button type="button" onClick={confirm} className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">Simpan peminjaman</button></>}</div></ModalShell>;
 }
 function AddBookModal({ onClose, onSave, book = null }) {
-  const [form, setForm] = useState(() => book ? { judul: book.judul || '', penulis: book.penulis || '', penerbit: book.penerbit || '', genre: book.genre || '', stok: String(book.stok || 0), coverUrl: book.coverUrl || '', description: book.description || book.deskripsi || '' } : { judul: '', penulis: '', penerbit: '', genre: '', stok: '0', coverUrl: '', description: '' });
+  const [form, setForm] = useState(() => book ? { judul: book.judul || '', penulis: book.penulis || '', penerbit: book.penerbit || '', genre: book.genre || '', stok: String(book.stok || 0), coverUrl: book.cover_url || book.coverUrl || '', description: book.description || book.deskripsi || '' } : { judul: '', penulis: '', penerbit: '', genre: '', stok: '0', coverUrl: '', description: '' });
   const [publishers, setPublishers] = useState(['Lentera Dipantara', 'Bentang Pustaka', 'Kompas', 'KPG']);
   const [genres, setGenres] = useState(['Novel', 'Drama', 'Self-Improvement', 'Fiksi Sejarah']);
   const [customPublisher, setCustomPublisher] = useState(false);
@@ -490,9 +540,9 @@ function TransactionModal({ books, users, initialBook = null, onClose, onSave })
 function BookDetailModal({ book, onClose, onBorrow, onEdit }) {
   const [expanded, setExpanded] = useState(false);
   if (!book) return null;
-  const description = book.description || book.deskripsi || 'Deskripsi buku belum tersedia.';
+  const description = book.description || book.deskripsi || 'Deskripsi buku belum diisi.';
   const available = Number(book.stok) > 0 || book.status === 'Tersedia';
-  const specifications = [['ISBN', book.isbn || book.ISBN || '-'], ['Tanggal terbit', book.tanggalTerbit || book.tanggal_terbit || '-'], ['Jumlah halaman', book.halaman ? `${book.halaman} halaman` : '-'], ['Bahasa', book.bahasa || 'Indonesia'], ['Stok tersedia', `${book.stok || 0} buku`]];
+  const specifications = [['ISBN', book.isbn || book.ISBN || 'Belum diisi'], ['Tanggal terbit', book.tanggal_terbit || book.tanggalTerbit || 'Belum diisi'], ['Jumlah halaman', book.halaman ? `${book.halaman} halaman` : 'Belum diisi'], ['Bahasa', book.bahasa || 'Belum diisi'], ['Stok tersedia', `${book.stok || 0} buku`]];
   return <ModalShell eyebrow="Detail koleksi" title={book.judul} onClose={onClose} wide><div className="grid grid-cols-1 gap-8 p-5 md:grid-cols-12 md:p-8"><div className="md:col-span-4"><div className="overflow-hidden rounded-lg shadow-[0_12px_28px_rgba(74,59,45,0.12)]"><BookCover book={book} large /></div><div className="mt-4 flex flex-col gap-2"><button type="button" disabled={!available} onClick={() => onBorrow(book)} className="rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-300">{available ? 'Pinjam Buku' : 'Stok Habis'}</button><button type="button" onClick={() => onEdit(book)} className="rounded-md border border-stone-300 px-4 py-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-50">Edit Data</button></div></div><div className="min-w-0 md:col-span-8"><div className="flex flex-wrap items-center gap-2"><span className="rounded-full bg-[#f4eee6] px-2.5 py-1 text-[10px] font-medium text-[#876a4c]">{book.genre || 'Tanpa genre'}</span><StatusBadge tone={available ? 'green' : 'stone'}>{available ? 'Tersedia' : 'Dipinjam'}</StatusBadge></div><h3 className="mt-3 font-serif text-3xl leading-tight tracking-[-0.04em] text-stone-900">{book.judul}</h3><p className="mt-2 text-sm text-stone-500">{book.penulis} <span className="text-stone-300">·</span> {book.penerbit || 'Penerbit tidak tersedia'}</p><section className="mt-6 border-t border-stone-200 pt-5"><h4 className="font-serif text-lg text-stone-900">Deskripsi Buku</h4><p className={`mt-2 text-sm leading-6 text-stone-500 ${expanded ? '' : 'line-clamp-3'}`}>{description}</p>{description.length > 170 && <button type="button" onClick={() => setExpanded((current) => !current)} className="mt-2 text-xs font-semibold text-stone-800 underline underline-offset-4">{expanded ? 'Tampilkan lebih sedikit' : 'Baca selengkapnya'}</button>}</section><section className="mt-6 border-t border-stone-200 pt-5"><h4 className="font-serif text-lg text-stone-900">Detail Spesifikasi</h4><dl className="mt-3 grid grid-cols-1 gap-x-8 gap-y-2.5 text-sm sm:grid-cols-2">{specifications.map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 border-b border-stone-100 pb-2.5"><dt className="text-stone-500">{label}</dt><dd className="text-right font-medium text-stone-800">{value}</dd></div>)}</dl></section></div></div><div className="flex justify-end border-t border-stone-200 px-5 py-4 md:px-8"><button type="button" onClick={onClose} className="rounded-md bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] hover:bg-stone-800">Tutup</button></div></ModalShell>;
 }
 
@@ -560,7 +610,9 @@ function ShiftModal({ member, onClose, onSave, shiftOptions, onShiftOptionsChang
   return <ModalShell eyebrow="Administrasi" title="Edit shift" onClose={onClose}><form onSubmit={submit}><div className="flex flex-col gap-5 p-5 sm:p-8"><div className="rounded-xl border border-[#E5E0D8] bg-white p-4"><p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-stone-500">Karyawan</p><p className="mt-1 font-serif text-xl text-stone-900">{member.name}</p><p className="mt-1 text-xs text-stone-500">Jadwal ini menjadi acuan waktu masuk pada widget absensi.</p></div><label><span className="mb-2 block text-xs font-medium text-stone-700">Pilih jadwal shift</span><CustomDropdown value={shift} options={[{ value: '', label: 'Pilih shift' }, ...shiftOptions]} onChange={setShift} ariaLabel="Pilih shift" /></label><div className="rounded-xl border border-[#E5E0D8] bg-white p-4"><p className="text-xs font-semibold text-stone-800">Daftar shift</p><div className="mt-3 flex flex-col gap-2">{shiftOptions.map((option) => <div key={option.value} className="flex items-center justify-between gap-3 rounded-lg border border-stone-100 bg-[#FAF7F2] px-3 py-2"><button type="button" onClick={() => setShift(option.value)} className="min-w-0 flex-1 truncate text-left text-xs text-stone-700 hover:text-stone-950">{option.label}</button><button type="button" aria-label={`Hapus ${option.label}`} onClick={() => removeShift(option.value)} className="inline-flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-[11px] text-[#a25d5d] transition hover:bg-[#fcf0f0]"><Trash2 aria-hidden="true" className="size-3.5" /> Hapus</button></div>)}</div></div><div className="rounded-xl border border-dashed border-stone-300 p-4"><p className="text-xs font-semibold text-stone-800">+ Tambah Shift Baru</p><div className="mt-3 grid gap-3 sm:grid-cols-[1fr_1fr_auto]"><input value={newShiftName} onChange={(event) => setNewShiftName(event.target.value)} placeholder="Nama Shift" aria-label="Nama Shift" className={inputClass} /><input value={newShiftHours} onChange={(event) => setNewShiftHours(event.target.value)} placeholder="Jam, contoh 08.00 - 09.00" aria-label="Jam shift" className={inputClass} /><button type="button" onClick={addShift} className="rounded-lg bg-stone-900 px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">Tambah</button></div></div></div><div className="sticky bottom-0 flex flex-col-reverse gap-2 border-t border-[#E5E0D8] bg-[#FAF7F2]/95 backdrop-blur px-5 py-4 sm:flex-row sm:justify-end sm:gap-3 sm:px-8"><button type="button" onClick={onClose} className="rounded-lg border border-[#E5E0D8] bg-transparent px-4 py-2.5 text-xs font-medium text-stone-700 transition hover:bg-white">Batal</button><button type="submit" className="rounded-lg bg-[#1F1E1D] px-4 py-2.5 text-xs font-medium text-[#FAF7F2] transition hover:bg-stone-800">Simpan shift</button></div></form></ModalShell>;
 }
 function StaffManagement({ staff, currentUser, onAddStaff, onEditShift }) {
-  return <><PageHeader eyebrow="Administrasi" title="Karyawan & shift" description="Data pengguna internal, peran, dan jadwal shift." action={<button type="button" onClick={onAddStaff} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Tambah karyawan</button>} /><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Nama</th><th className="px-5 py-3 font-medium">Username</th><th className="px-5 py-3 font-medium">Peran</th><th className="px-5 py-3 font-medium">Jadwal shift</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{staff.length ? staff.map((member) => <tr key={member.id}><td className="px-6 py-4 font-medium text-stone-800">{member.name}</td><td className="px-5 py-4 text-stone-600">@{member.username}</td><td className="px-5 py-4 text-stone-600">{member.role}</td><td className="px-5 py-4"><button type="button" onClick={() => onEditShift(member)} className={`inline-flex rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors ${member.shift === 'Belum diatur' ? 'border-[#ead9b8] bg-[#faf4e7] text-[#977333] hover:border-[#c9a765] hover:bg-[#f7eedb]' : 'border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-400 hover:bg-white'}`}>{member.shift === 'Belum diatur' ? 'Atur Shift' : member.shift}</button></td><td className="px-5 py-4"><StatusBadge tone={String(member.username || '').toLowerCase() === String(currentUser?.username || '').toLowerCase() ? 'success' : 'danger'}>{String(member.username || '').toLowerCase() === String(currentUser?.username || '').toLowerCase() ? 'Aktif' : 'Tidak Aktif'}</StatusBadge></td></tr>) : <tr><td colSpan="5" className="px-6 py-12 text-center text-sm text-stone-500">Belum ada data karyawan/absensi</td></tr>}</tbody></table></div></section></>;
+  const orderedStaff = useMemo(() => sortStaff(staff), [staff]);
+  const currentUsername = String(currentUser?.username || currentUser?.user_name || currentUser?.name || '').trim().toLowerCase();
+  return <><PageHeader eyebrow="Administrasi" title="Karyawan & shift" description="Data pengguna internal, peran, dan jadwal shift." action={<button type="button" onClick={onAddStaff} className="flex items-center justify-center gap-2 rounded-md bg-stone-900 px-4 py-3 text-xs font-semibold text-[#FAF7F2] hover:bg-stone-800"><Plus aria-hidden="true" className="size-4" /> Tambah karyawan</button>} /><section className="overflow-hidden rounded-lg border border-stone-200 bg-white"><div className="overflow-x-auto"><table className="w-full min-w-[760px] text-left text-sm"><thead className="bg-stone-50 text-[11px] text-stone-500"><tr><th className="px-6 py-3 font-medium">Nama</th><th className="px-5 py-3 font-medium">Username</th><th className="px-5 py-3 font-medium">Peran</th><th className="px-5 py-3 font-medium">Jadwal shift</th><th className="px-5 py-3 font-medium">Status</th></tr></thead><tbody className="divide-y divide-stone-100">{orderedStaff.length ? orderedStaff.map((member) => <tr key={member.id}><td className="px-6 py-4 font-medium text-stone-800">{member.name}</td><td className="px-5 py-4 text-stone-600">@{member.username}</td><td className="px-5 py-4 text-stone-600">{member.role}</td><td className="px-5 py-4">{member.shift === 'Belum diatur' ? <button type="button" onClick={() => onEditShift(member)} className="inline-flex rounded-full border border-[#ead9b8] bg-[#faf4e7] px-2.5 py-1 text-[11px] font-medium text-[#977333] transition-colors hover:border-[#c9a765] hover:bg-[#f7eedb]">Atur Shift</button> : <div className="group inline-flex items-center gap-1.5"><StatusBadge tone="neutral">{formatShiftLabel(member.shift)}</StatusBadge><button type="button" aria-label={`Ubah jadwal shift ${member.name}`} onClick={() => onEditShift(member)} className="inline-flex size-6 items-center justify-center rounded-full text-stone-400 opacity-60 transition hover:bg-stone-100 hover:text-stone-800 focus-visible:opacity-100 group-hover:opacity-100"><Pencil aria-hidden="true" className="size-3.5" /></button></div>}</td><td className="px-5 py-4"><StatusBadge tone={String(member.username || '').trim().toLowerCase() === currentUsername ? 'success' : 'neutral'}>{String(member.username || '').trim().toLowerCase() === currentUsername ? 'Aktif' : 'Tidak Aktif'}</StatusBadge></td></tr>) : <tr><td colSpan="5" className="px-6 py-12 text-center text-sm text-stone-500">Belum ada data karyawan/absensi</td></tr>}</tbody></table></div></section></>;
 }
 
 function AttendanceReport({ attendanceRecords }) {
@@ -578,7 +630,7 @@ export default function Dashboard() {
   const role = Number(user?.id_role) || 3;
   const [activeView, setActiveView] = useState('overview');
   const [mobileOpen, setMobileOpen] = useState(false);
-  const [books, setBooks] = useState(MOCK_BOOKS);
+  const [books, setBooks] = useState(() => MOCK_BOOKS.map(normalizeBook).filter(Boolean));
   const [users, setUsers] = useState(() => readRegisteredUsers(user));
   const [loans, setLoans] = useState(() => readLoanData());
   const [facilities, setFacilities] = useState(MOCK_FACILITIES);
@@ -601,9 +653,9 @@ export default function Dashboard() {
       const response = await api.get('/buku');
       const result = Array.isArray(response.data) ? response.data : response.data?.data;
       if (!Array.isArray(result)) throw new Error('Format data tidak sesuai');
-      setBooks(result.length ? result : MOCK_BOOKS);
+      setBooks(result.length ? result.map(normalizeBook).filter(Boolean) : MOCK_BOOKS.map(normalizeBook).filter(Boolean));
     } catch {
-      setBooks(MOCK_BOOKS);
+      setBooks(MOCK_BOOKS.map(normalizeBook).filter(Boolean));
       setApiNotice('Menampilkan data demo karena server katalog belum terhubung.');
     } finally {
       setLoadingBooks(false);
@@ -652,13 +704,17 @@ export default function Dashboard() {
   const closeModal = () => { setIsModalOpen(false); setModalType(null); setSelectedBook(null); setTransactionBook(null); setDetailBook(null); setShiftMember(null); };
   const handleAddBook = (form) => {
     const title = form.judul.trim();
-    const book = { id_buku: Date.now(), judul: title, penulis: form.penulis.trim(), penerbit: form.penerbit.trim(), genre: form.genre.trim(), description: form.description.trim(), stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(title), coverUrl: form.coverUrl.trim(), cover: 'from-[#74604e] via-[#a58b70] to-[#d3c1a7]' };
+    const coverUrl = form.coverUrl.trim();
+    const description = form.description.trim();
+    const book = normalizeBook({ id_buku: Date.now(), judul: title, penulis: form.penulis.trim(), penerbit: form.penerbit.trim(), genre: form.genre.trim(), description, deskripsi: description, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(title), coverUrl, cover_url: coverUrl, cover: 'from-[#74604e] via-[#a58b70] to-[#d3c1a7]' });
     setBooks((current) => [...current, book]);
     setApiNotice('Buku baru ditambahkan ke daftar lokal.');
     closeModal();
   };
   const handleEditBook = (form) => {
-    setBooks((current) => current.map((book) => book.id_buku === detailBook?.id_buku ? { ...book, ...form, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(form.judul.trim()) } : book));
+    const coverUrl = form.coverUrl.trim();
+    const description = form.description.trim();
+    setBooks((current) => current.map((book) => book.id_buku === detailBook?.id_buku ? normalizeBook({ ...book, ...form, description, deskripsi: description, coverUrl, cover_url: coverUrl, stok: Number(form.stok), status: Number(form.stok) > 0 ? 'Tersedia' : 'Dipinjam', initials: getInitials(form.judul.trim()) }) : book));
     setApiNotice('Data buku berhasil diperbarui.');
     closeModal();
   };
@@ -680,7 +736,7 @@ export default function Dashboard() {
   };
   const handleSaveShift = (shift) => {
     if (!shiftMember) return;
-    const nextStaff = karyawan.map((member) => member.id === shiftMember.id ? { ...member, shift } : member);
+    const nextStaff = sortStaff(karyawan.map((member) => member.id === shiftMember.id ? { ...member, shift } : member));
     setKaryawan(nextStaff);
     setUsers((current) => current.map((member) => member.id === shiftMember.id ? { ...member, shift } : member));
     saveStaffData(nextStaff);
@@ -689,9 +745,9 @@ export default function Dashboard() {
   };
   const handleAddStaff = (form) => {
     const newStaff = { id: Date.now(), ...form, name: form.name.trim(), username: form.username.trim(), shift: form.shift.trim(), status: 'Aktif' };
-    const nextStaff = [...karyawan, newStaff];
+    const nextStaff = sortStaff([...karyawan, newStaff]);
     setKaryawan(nextStaff);
-    setUsers((current) => [...current.filter((member) => member.username !== newStaff.username), newStaff]);
+    setUsers((current) => sortStaff([...current.filter((member) => member.username !== newStaff.username), newStaff]));
     saveStaffData(nextStaff);
     setApiNotice('Karyawan baru berhasil ditambahkan.');
     closeModal();
