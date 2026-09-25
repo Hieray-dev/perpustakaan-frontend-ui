@@ -1,0 +1,156 @@
+{
+  "command": "unused-deps",
+  "verdict": "fail",
+  "summary": {
+    "project_path": "/home/ray/projects/perpustakaan-web",
+    "issue_count": 5,
+    "overall_status": "clean"
+  },
+  "issues": [
+    {
+      "issue_type": "manifest_unused_dependency",
+      "manifest": "package.json",
+      "dependency": "@types/react",
+      "confidence": 0.78,
+      "action_class": "safe_review",
+      "evidence": {
+        "declared_dependency": "@types/react",
+        "section": "devDependencies",
+        "imported_modules": [
+          "@eslint/js",
+          "@tailwindcss/vite",
+          "@vitejs/plugin_react",
+          "axios",
+          "eslint",
+          "eslint_plugin_react_hooks",
+          "eslint_plugin_react_refresh",
+          "globals",
+          "lucide_react",
+          "react",
+          "react_dom",
+          "react_router_dom",
+          "vite"
+        ],
+        "reasons": [
+          "declared in package.json but not observed in scanned JS/TS imports"
+        ]
+      }
+    },
+    {
+      "issue_type": "manifest_unused_dependency",
+      "manifest": "package.json",
+      "dependency": "@types/react_dom",
+      "confidence": 0.78,
+      "action_class": "safe_review",
+      "evidence": {
+        "declared_dependency": "@types/react_dom",
+        "section": "devDependencies",
+        "imported_modules": [
+          "@eslint/js",
+          "@tailwindcss/vite",
+          "@vitejs/plugin_react",
+          "axios",
+          "eslint",
+          "eslint_plugin_react_hooks",
+          "eslint_plugin_react_refresh",
+          "globals",
+          "lucide_react",
+          "react",
+          "react_dom",
+          "react_router_dom",
+          "vite"
+        ],
+        "reasons": [
+          "declared in package.json but not observed in scanned JS/TS imports"
+        ]
+      }
+    },
+    {
+      "issue_type": "manifest_unused_dependency",
+      "manifest": "package.json",
+      "dependency": "autoprefixer",
+      "confidence": 0.78,
+      "action_class": "safe_review",
+      "evidence": {
+        "declared_dependency": "autoprefixer",
+        "section": "devDependencies",
+        "imported_modules": [
+          "@eslint/js",
+          "@tailwindcss/vite",
+          "@vitejs/plugin_react",
+          "axios",
+          "eslint",
+          "eslint_plugin_react_hooks",
+          "eslint_plugin_react_refresh",
+          "globals",
+          "lucide_react",
+          "react",
+          "react_dom",
+          "react_router_dom",
+          "vite"
+        ],
+        "reasons": [
+          "declared in package.json but not observed in scanned JS/TS imports"
+        ]
+      }
+    },
+    {
+      "issue_type": "manifest_unused_dependency",
+      "manifest": "package.json",
+      "dependency": "postcss",
+      "confidence": 0.78,
+      "action_class": "safe_review",
+      "evidence": {
+        "declared_dependency": "postcss",
+        "section": "devDependencies",
+        "imported_modules": [
+          "@eslint/js",
+          "@tailwindcss/vite",
+          "@vitejs/plugin_react",
+          "axios",
+          "eslint",
+          "eslint_plugin_react_hooks",
+          "eslint_plugin_react_refresh",
+          "globals",
+          "lucide_react",
+          "react",
+          "react_dom",
+          "react_router_dom",
+          "vite"
+        ],
+        "reasons": [
+          "declared in package.json but not observed in scanned JS/TS imports"
+        ]
+      }
+    },
+    {
+      "issue_type": "manifest_unused_dependency",
+      "manifest": "package.json",
+      "dependency": "tailwindcss",
+      "confidence": 0.78,
+      "action_class": "safe_review",
+      "evidence": {
+        "declared_dependency": "tailwindcss",
+        "section": "devDependencies",
+        "imported_modules": [
+          "@eslint/js",
+          "@tailwindcss/vite",
+          "@vitejs/plugin_react",
+          "axios",
+          "eslint",
+          "eslint_plugin_react_hooks",
+          "eslint_plugin_react_refresh",
+          "globals",
+          "lucide_react",
+          "react",
+          "react_dom",
+          "react_router_dom",
+          "vite"
+        ],
+        "reasons": [
+          "declared in package.json but not observed in scanned JS/TS imports"
+        ]
+      }
+    }
+  ]
+}
