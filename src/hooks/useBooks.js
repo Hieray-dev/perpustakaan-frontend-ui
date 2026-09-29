@@ -47,7 +47,7 @@ function writeBookData(books) {
 }
 
 async function saveBookToBackend(form, method, id) {
-  const endpoint = `http://localhost:8080/api/buku${id ? `/${encodeURIComponent(id)}` : ''}`;
+  const endpoint = `https://backend-perpustakaan-production-6f7f.up.railway.app/api/buku${id ? `/${encodeURIComponent(id)}` : ''}`;
   const payload = { ...form, cover_url: form.coverUrl?.trim() || '' };
   const body = form.coverFile ? (() => { const data = new FormData(); Object.entries(payload).forEach(([key, value]) => { if (value !== undefined && key !== 'coverFile' && key !== 'coverPreview') data.append(key, String(value ?? '')); }); data.append('cover', form.coverFile); return data; })() : JSON.stringify(payload);
   const response = await fetch(endpoint, { method, headers: body instanceof FormData ? { Authorization: `Bearer ${getToken()}` } : { 'Content-Type': 'application/json', Authorization: `Bearer ${getToken()}` }, body });
@@ -69,7 +69,7 @@ export default function useBooks({ onNotice }) {
     if (savedBooks.length) { setBooks(savedBooks); return; }
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:8080/api/buku', { headers: { Authorization: `Bearer ${getToken()}` } });
+      const response = await fetch('https://backend-perpustakaan-production-6f7f.up.railway.app/api/buku', { headers: { Authorization: `Bearer ${getToken()}` } });
       const result = await response.json();
       const data = Array.isArray(result) ? result : result?.data;
       if (!Array.isArray(data)) throw new Error('Format data tidak sesuai');

@@ -17,7 +17,7 @@ function getBookCoverPalette(title = '') {
 function BookCover({ book }) {
   const rawCoverUrl = book.cover_url || book.coverUrl;
   const coverUrl = rawCoverUrl && !/^(https?:|data:|blob:|\/)/i.test(rawCoverUrl)
-    ? `http://localhost:8080/uploads/${rawCoverUrl}`
+    ? `https://backend-perpustakaan-production-6f7f.up.railway.app/uploads/${rawCoverUrl}`
     : rawCoverUrl;
   const title = book.judul || 'Koleksi buku';
   const [failedCoverUrl, setFailedCoverUrl] = useState('');

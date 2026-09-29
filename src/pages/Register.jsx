@@ -144,7 +144,7 @@ function RegisterForm() {
 
     try {
       // Role anggota (3) dijadikan default di backend bila id_role tidak terkirim.
-      const response = await fetch('http://localhost:8080/register', {
+      const response = await fetch('https://backend-perpustakaan-production-6f7f.up.railway.app/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ full_name: fullName.trim(), username: username.trim(), password }),

@@ -89,7 +89,7 @@ function LoginForm() {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:8080/login', {
+      const response = await fetch('https://backend-perpustakaan-production-6f7f.up.railway.app/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body: JSON.stringify({ username: username.trim(), password }),
