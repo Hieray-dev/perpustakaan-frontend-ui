@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:8080',
+  baseURL: import.meta.env.VITE_API_BASE_URL || 'https://backend-perpustakaan-production-6f7f.up.railway.app',
 });
 
 // Lampirkan token JWT (Bearer) ke tiap request
